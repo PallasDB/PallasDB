@@ -1,9 +1,5 @@
 package db0102
 
-import (
-	"bytes"
-)
-
 type KV struct {
 	mem map[string][]byte
 }
@@ -16,21 +12,26 @@ func (kv *KV) Open() error {
 func (kv *KV) Close() error { return nil }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
-	val, ok = kv.mem[string(key)]
-	return
+	x, ok := kv.mem[string(key)]
+	return x, ok, nil
 }
 
 func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
-	prev, exist := kv.mem[string(key)]
+	_, exists := kv.mem[string(key)]
+	if !exists {
+		updated = true
+	}
 	kv.mem[string(key)] = val
-	updated = !exist || !bytes.Equal(prev, val)
-	return
+	return updated, nil
 }
 
 func (kv *KV) Del(key []byte) (deleted bool, err error) {
-	_, deleted = kv.mem[string(key)]
-	delete(kv.mem, string(key))
-	return
+	_, exists := kv.mem[string(key)]
+	if exists {
+		delete(kv.mem, string(key))
+		deleted = true
+	}
+	return deleted, nil
 }
 
 // QzBQWVJJOUhU https://trialofcode.org/
