@@ -19,7 +19,12 @@ func (log *Log) Close() error {
 	return log.fp.Close()
 }
 
-func (log *Log) Write(ent *Entry) error
+func (log *Log) Write(ent *Entry) error {
+	if _, err := log.fp.Write(ent.Encode()); err != nil {
+		return err
+	}
+	return log.fp.Sync()
+}
 
 func (log *Log) Read(ent *Entry) (eof bool, err error) {
 	err = ent.Decode(log.fp)
