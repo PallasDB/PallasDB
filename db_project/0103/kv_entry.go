@@ -24,6 +24,14 @@ func (ent *Entry) Encode() []byte {
 	return data
 }
 
+func NewEntry(key []byte, val []byte, deleted bool) *Entry {
+	return &Entry{
+		key:     key,
+		val:     val,
+		deleted: false,
+	}
+}
+
 func (ent *Entry) Decode(r io.Reader) error {
 	var header [9]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
