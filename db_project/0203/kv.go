@@ -44,7 +44,24 @@ const (
 	ModeUpdate UpdateMode = 2 // update existing
 )
 
-func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error)
+func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
+	_, exists := kv.mem[string(key)]
+	switch mode {
+	case ModeInsert:
+		if exists {
+			return false, nil
+		}
+	case ModeUpdate:
+		if !exists {
+			return false, nil
+		}
+	}
+	if err = kv.log.Write(&Entry{key: key, val: val, deleted: false}); err != nil {
+		return false, err
+	}
+	kv.mem[string(key)] = val
+	return true, nil
+}
 
 func (kv *KV) Set(key []byte, val []byte) (updated bool, err error) {
 	return kv.SetEx(key, val, ModeUpsert)
