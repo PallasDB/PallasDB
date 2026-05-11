@@ -77,7 +77,35 @@ func (db *DB) ExecStmt(stmt interface{}) (r SQLResult, err error) {
 	return
 }
 
-func (db *DB) execCreateTable(stmt *StmtCreatTable) (err error)
+func colIndex(schema *Schema, name string) int {
+	for i, col := range schema.Cols {
+		if col.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (db *DB) execCreateTable(stmt *StmtCreatTable) (err error) {
+	schema := Schema{Table: stmt.table, Cols: stmt.cols}
+	for _, name := range stmt.pkey {
+		idx := colIndex(&schema, name)
+		if idx < 0 {
+			return errors.New("primary key column not found: " + name)
+		}
+		schema.PKey = append(schema.PKey, idx)
+	}
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	_, err = db.KV.SetEx([]byte("@schema_"+stmt.table), data, ModeUpsert)
+	if err != nil {
+		return err
+	}
+	db.tables[stmt.table] = schema
+	return nil
+}
 
 func (db *DB) GetSchema(table string) (Schema, error) {
 	schema, ok := db.tables[table]
@@ -97,12 +125,103 @@ func (db *DB) GetSchema(table string) (Schema, error) {
 	return schema, nil
 }
 
-func (db *DB) execSelect(stmt *StmtSelect) ([]Row, error)
+func buildRowFromKeys(schema *Schema, keys []NamedCell) (Row, error) {
+	row := schema.NewRow()
+	for i, col := range schema.Cols {
+		row[i].Type = col.Type
+	}
+	for _, nc := range keys {
+		idx := colIndex(schema, nc.column)
+		if idx < 0 {
+			return nil, errors.New("unknown column: " + nc.column)
+		}
+		row[idx] = nc.value
+	}
+	return row, nil
+}
 
-func (db *DB) execInsert(stmt *StmtInsert) (count int, err error)
+func (db *DB) execSelect(stmt *StmtSelect) ([]Row, error) {
+	schema, err := db.GetSchema(stmt.table)
+	if err != nil {
+		return nil, err
+	}
+	row, err := buildRowFromKeys(&schema, stmt.keys)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := db.Select(&schema, row)
+	if err != nil || !ok {
+		return nil, err
+	}
+	out := Row{}
+	for _, colName := range stmt.cols {
+		idx := colIndex(&schema, colName)
+		if idx < 0 {
+			return nil, errors.New("unknown column: " + colName)
+		}
+		out = append(out, row[idx])
+	}
+	return []Row{out}, nil
+}
 
-func (db *DB) execUpdate(stmt *StmtUpdate) (count int, err error)
+func (db *DB) execInsert(stmt *StmtInsert) (count int, err error) {
+	schema, err := db.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+	if len(stmt.value) != len(schema.Cols) {
+		return 0, errors.New("wrong number of values")
+	}
+	row := schema.NewRow()
+	copy(row, stmt.value)
+	updated, err := db.Insert(&schema, row)
+	if updated {
+		count = 1
+	}
+	return
+}
 
-func (db *DB) execDelete(stmt *StmtDelete) (count int, err error)
+func (db *DB) execUpdate(stmt *StmtUpdate) (count int, err error) {
+	schema, err := db.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+	row, err := buildRowFromKeys(&schema, stmt.keys)
+	if err != nil {
+		return 0, err
+	}
+	ok, err := db.Select(&schema, row)
+	if err != nil || !ok {
+		return 0, err
+	}
+	for _, nc := range stmt.value {
+		idx := colIndex(&schema, nc.column)
+		if idx < 0 {
+			return 0, errors.New("unknown column: " + nc.column)
+		}
+		row[idx] = nc.value
+	}
+	updated, err := db.Update(&schema, row)
+	if updated {
+		count = 1
+	}
+	return
+}
+
+func (db *DB) execDelete(stmt *StmtDelete) (count int, err error) {
+	schema, err := db.GetSchema(stmt.table)
+	if err != nil {
+		return 0, err
+	}
+	row, err := buildRowFromKeys(&schema, stmt.keys)
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := db.Delete(&schema, row)
+	if deleted {
+		count = 1
+	}
+	return
+}
 
 // QzBQWVJJOUhU https://trialofcode.org/
