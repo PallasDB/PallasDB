@@ -84,9 +84,54 @@ func (p *Parser) parseValue(out *Cell) error {
 	}
 }
 
-func (p *Parser) parseString(out *Cell) error
+func (p *Parser) parseString(out *Cell) error {
+	quote := p.buf[p.pos]
+	p.pos++
+	var result []byte
+	for p.pos < len(p.buf) {
+		ch := p.buf[p.pos]
+		if ch == quote {
+			p.pos++
+			out.Type = TypeStr
+			out.Str = result
+			return nil
+		} else if ch == '\\' {
+			p.pos++
+			if p.pos >= len(p.buf) {
+				return errors.New("unterminated string")
+			}
+			result = append(result, p.buf[p.pos])
+			p.pos++
+		} else {
+			result = append(result, ch)
+			p.pos++
+		}
+	}
+	return errors.New("unterminated string")
+}
 
-func (p *Parser) parseInt(out *Cell) (err error)
+func (p *Parser) parseInt(out *Cell) (err error) {
+	start := p.pos
+	if p.pos < len(p.buf) && (p.buf[p.pos] == '-' || p.buf[p.pos] == '+') {
+		p.pos++
+	}
+	if p.pos >= len(p.buf) || !isDigit(p.buf[p.pos]) {
+		p.pos = start
+		return errors.New("expect integer")
+	}
+	var val int64
+	neg := p.buf[start] == '-'
+	for p.pos < len(p.buf) && isDigit(p.buf[p.pos]) {
+		val = val*10 + int64(p.buf[p.pos]-'0')
+		p.pos++
+	}
+	if neg {
+		val = -val
+	}
+	out.Type = TypeI64
+	out.I64 = val
+	return nil
+}
 
 func (p *Parser) isEnd() bool {
 	p.skipSpaces()
