@@ -227,13 +227,127 @@ func (p *Parser) parseWhere(out *[]NamedCell) error {
 	return nil
 }
 
-func (p *Parser) parseCreateTable(out *StmtCreatTable) error
+func (p *Parser) parseType() (CellType, error) {
+	if p.tryKeyword("int64") {
+		return TypeI64, nil
+	} else if p.tryKeyword("string") {
+		return TypeStr, nil
+	}
+	return 0, errors.New("expect type")
+}
 
-func (p *Parser) parseInsert(out *StmtInsert) error
+func (p *Parser) parseCreateTable(out *StmtCreatTable) error {
+	var ok bool
+	if out.table, ok = p.tryName(); !ok {
+		return errors.New("expect table name")
+	}
+	if !p.tryPunctuation("(") {
+		return errors.New("expect (")
+	}
+	for !p.tryKeyword("PRIMARY") {
+		if len(out.cols) > 0 && !p.tryPunctuation(",") {
+			return errors.New("expect comma")
+		}
+		if p.tryKeyword("PRIMARY") {
+			break
+		}
+		col := Column{}
+		if col.Name, ok = p.tryName(); !ok {
+			return errors.New("expect column name")
+		}
+		var err error
+		if col.Type, err = p.parseType(); err != nil {
+			return err
+		}
+		out.cols = append(out.cols, col)
+	}
+	if !p.tryKeyword("KEY") {
+		return errors.New("expect KEY")
+	}
+	if !p.tryPunctuation("(") {
+		return errors.New("expect (")
+	}
+	for !p.tryPunctuation(")") {
+		if len(out.pkey) > 0 && !p.tryPunctuation(",") {
+			return errors.New("expect comma")
+		}
+		name, ok := p.tryName()
+		if !ok {
+			return errors.New("expect key column")
+		}
+		out.pkey = append(out.pkey, name)
+	}
+	if !p.tryPunctuation(")") {
+		return errors.New("expect )")
+	}
+	p.tryPunctuation(";")
+	return nil
+}
 
-func (p *Parser) parseUpdate(out *StmtUpdate) error
+func (p *Parser) parseInsert(out *StmtInsert) error {
+	var ok bool
+	if out.table, ok = p.tryName(); !ok {
+		return errors.New("expect table name")
+	}
+	if !p.tryKeyword("VALUES") {
+		return errors.New("expect VALUES")
+	}
+	if !p.tryPunctuation("(") {
+		return errors.New("expect (")
+	}
+	for !p.tryPunctuation(")") {
+		if len(out.value) > 0 && !p.tryPunctuation(",") {
+			return errors.New("expect comma")
+		}
+		cell := Cell{}
+		if err := p.parseValue(&cell); err != nil {
+			return err
+		}
+		out.value = append(out.value, cell)
+	}
+	p.tryPunctuation(";")
+	return nil
+}
 
-func (p *Parser) parseDelete(out *StmtDelete) error
+func (p *Parser) parseUpdate(out *StmtUpdate) error {
+	var ok bool
+	if out.table, ok = p.tryName(); !ok {
+		return errors.New("expect table name")
+	}
+	if !p.tryKeyword("SET") {
+		return errors.New("expect SET")
+	}
+	for !p.tryKeyword("WHERE") {
+		if len(out.value) > 0 && !p.tryPunctuation(",") {
+			return errors.New("expect comma")
+		}
+		nc := NamedCell{}
+		if err := p.parseEqual(&nc); err != nil {
+			return err
+		}
+		out.value = append(out.value, nc)
+	}
+	for {
+		nc := NamedCell{}
+		if err := p.parseEqual(&nc); err != nil {
+			return err
+		}
+		out.keys = append(out.keys, nc)
+		if !p.tryKeyword("AND") {
+			break
+		}
+	}
+	p.tryPunctuation(";")
+	return nil
+}
+
+func (p *Parser) parseDelete(out *StmtDelete) error {
+	var ok bool
+	if out.table, ok = p.tryName(); !ok {
+		return errors.New("expect table name")
+	}
+	return p.parseWhere(&out.keys)
+}
 
 func (p *Parser) parseStmt() (out interface{}, err error) {
 	if p.tryKeyword("SELECT") {
