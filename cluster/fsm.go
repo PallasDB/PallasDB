@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/raft"
-	"github.com/teddymalhan/pallasdb/pallasdb"
+	"github.com/teddymalhan/pallasdb/db"
 )
 
 // FSMResult is returned from Apply so the gRPC caller can surface errors.
@@ -16,15 +16,15 @@ type FSMResult struct {
 	Err     error
 }
 
-// FSM wraps a pallasdb.KV and implements raft.FSM.
+// FSM wraps a db.KV and implements raft.FSM.
 // It guards the store with an RWMutex so Restore can atomically swap it.
 type FSM struct {
 	mu      sync.RWMutex
-	store   *pallasdb.KV
+	store   *db.KV
 	dirpath string
 }
 
-func NewFSM(store *pallasdb.KV, dirpath string) *FSM {
+func NewFSM(store *db.KV, dirpath string) *FSM {
 	return &FSM{store: store, dirpath: dirpath}
 }
 
@@ -41,8 +41,8 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 
 	switch cmd.Op {
 	case OpPut:
-		mode := pallasdb.UpdateMode(cmd.Mode)
-		if mode < pallasdb.ModeUpsert || mode > pallasdb.ModeUpdate {
+		mode := db.UpdateMode(cmd.Mode)
+		if mode < db.ModeUpsert || mode > db.ModeUpdate {
 			return &FSMResult{Err: fmt.Errorf("invalid update mode: %d", cmd.Mode)}
 		}
 		updated, err := f.store.SetEx(cmd.Key, cmd.Val, mode)
@@ -71,7 +71,7 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 // Restore replaces the entire FSM state with the snapshot stream.
 // Uses a temp directory for atomicity: write to dirpath+".restore", then rename.
 func (f *FSM) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	pairs, err := readSnapshot(rc)
 	if err != nil {
@@ -81,13 +81,13 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 	restoreDir := f.dirpath + ".restore"
 	_ = os.RemoveAll(restoreDir)
 
-	fresh, err := pallasdb.NewKV(restoreDir, pallasdb.WithAutoCompact(false))
+	fresh, err := db.NewKV(restoreDir, db.WithAutoCompact(false))
 	if err != nil {
 		return fmt.Errorf("open restore store: %w", err)
 	}
 
 	for _, p := range pairs {
-		if _, err := fresh.SetEx(p.Key, p.Val, pallasdb.ModeUpsert); err != nil {
+		if _, err := fresh.SetEx(p.Key, p.Val, db.ModeUpsert); err != nil {
 			_ = fresh.Close()
 			_ = os.RemoveAll(restoreDir)
 			return fmt.Errorf("restore key: %w", err)
@@ -113,7 +113,7 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 		return fmt.Errorf("rename restore dir: %w", err)
 	}
 
-	f.store, err = pallasdb.NewKV(f.dirpath, pallasdb.WithAutoCompact(false))
+	f.store, err = db.NewKV(f.dirpath, db.WithAutoCompact(false))
 	if err != nil {
 		return fmt.Errorf("reopen restored store: %w", err)
 	}
@@ -136,7 +136,7 @@ func (f *FSM) Del(key []byte) (bool, error) {
 
 // NewTX opens a transaction and returns the transaction and a release function.
 // The caller must invoke release() when done.
-func (f *FSM) NewTX() (*pallasdb.KVTX, func()) {
+func (f *FSM) NewTX() (*db.KVTX, func()) {
 	f.mu.RLock()
 	tx := f.store.NewTX()
 	return tx, func() {

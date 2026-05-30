@@ -11,7 +11,7 @@ const (
 )
 
 // Command is the JSON payload written into each Raft log entry.
-// Mode mirrors pallasdb.UpdateMode: 1=Upsert, 2=Insert, 3=Update.
+// Mode mirrors db.UpdateMode: 1=Upsert, 2=Insert, 3=Update.
 // encoding/json marshals []byte fields as base64 automatically.
 type Command struct {
 	Op   Op     `json:"op"`

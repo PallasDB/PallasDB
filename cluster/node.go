@@ -12,7 +12,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
-	"github.com/teddymalhan/pallasdb/pallasdb"
+	"github.com/teddymalhan/pallasdb/db"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -37,7 +37,7 @@ type Node struct {
 }
 
 // Open initializes all Raft infrastructure and starts the node.
-func Open(kvStore *pallasdb.KV, cfg Config) (*Node, error) {
+func Open(kvStore *db.KV, cfg Config) (*Node, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 10 * time.Second
 	}
@@ -158,7 +158,7 @@ func sendJoinRequest(httpAddr, nodeID, raftAddr string) error {
 	if err != nil {
 		return fmt.Errorf("post join: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("join returned status %d", resp.StatusCode)
 	}
@@ -169,7 +169,7 @@ func sendJoinRequest(httpAddr, nodeID, raftAddr string) error {
 // previous crashed instance does not block startup indefinitely.
 func openBoltStoreWithTimeout(path string, timeout time.Duration) (*raftboltdb.BoltStore, error) {
 	return raftboltdb.New(raftboltdb.Options{
-		Path:   path,
+		Path: path,
 		BoltOptions: &bolt.Options{
 			Timeout: timeout,
 		},

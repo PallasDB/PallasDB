@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package pallasdb.v1;
 
-option go_package = "github.com/teddymalhan/pallasdb/pallasdbpb/v1;gokvv1";
+option go_package = "github.com/teddymalhan/pallasdb/pb/v1;pbv1";
 
 service KVService {
   rpc Get(GetRequest) returns (GetResponse);

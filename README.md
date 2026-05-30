@@ -1,17 +1,14 @@
-PallasDB
+# PallasDB
 
-Meaning: Pallas Athena represents wisdom, strategy, and technical craft.
-Why it fits: Nice if you want the project to feel engineered, careful, and correctness-oriented.
+PallasDB is a key-value database in Go using LSM trees, SSTables, write-ahead logging, concurrent access, gRPC, and Raft replication.
 
-# gokv
-
-A key-value database in Go using LSM trees, SSTables, write-ahead logging, and concurrent access.
+The name references Pallas Athena: wisdom, strategy, and technical craft.
 
 ## Background
 
-This project builds a small database engine from first principles: raw byte encoding, crash-safe persistence, sorted string tables, multi-level merging, a SQL parser, and expression evaluation.
+This project builds a small database engine from first principles: raw byte encoding, crash-safe persistence, sorted string tables, multi-level merging, a SQL parser, expression evaluation, and a replicated Raft-backed server mode.
 
-The implementation lives in the root package folder `gokv/`.
+The storage engine lives in `db/`. Cluster/Raft glue lives in `cluster/`. The public gRPC transport lives in `grpc/`. Generated protobuf code lives in `pb/`.
 
 ## Features
 
@@ -23,6 +20,9 @@ The implementation lives in the root package folder `gokv/`.
 - **Metadata management**: Double-buffered metadata files tracking SSTable versions.
 - **SQL Parser**: Tokenizer and recursive-descent parser for `CREATE TABLE`, `SELECT`, `INSERT`, `UPDATE`, and `DELETE`.
 - **Expression Evaluator**: Arithmetic, comparison, and logical operators for `WHERE` clause evaluation.
+- **gRPC API**: Key-value `Get`, `Put`, `Delete`, and streaming `Range` RPCs.
+- **Raft mode**: Leader-backed replicated writes using HashiCorp Raft.
+- **Unified CLI**: A single `pallasdb` binary for local operations, server startup, cluster startup, completions, and version output.
 
 ## Install
 
@@ -30,8 +30,9 @@ Requires Go 1.25 or later.
 
 ```sh
 git clone https://github.com/teddymalhan/pallasdb.git
-cd gokv
+cd pallasdb
 go mod download
+go build -o pallasdb ./cmd/pallasdb
 ```
 
 ## Usage
@@ -41,6 +42,66 @@ Run all tests:
 ```sh
 go test ./...
 ```
+
+Show CLI help:
+
+```sh
+go run ./cmd/pallasdb --help
+```
+
+### Local key-value operations
+
+```sh
+go run ./cmd/pallasdb local put hello world --data-dir ./data
+go run ./cmd/pallasdb local get hello --data-dir ./data
+go run ./cmd/pallasdb local range a z --data-dir ./data
+go run ./cmd/pallasdb local delete hello --data-dir ./data
+go run ./cmd/pallasdb local compact --data-dir ./data
+```
+
+### Single-node gRPC server
+
+```sh
+go run ./cmd/pallasdb serve grpc --addr :50051 --data-dir ./data
+```
+
+### Raft-backed cluster node
+
+Bootstrap the first node:
+
+```sh
+go run ./cmd/pallasdb cluster start \
+  --node-id node-1 \
+  --grpc-addr :50051 \
+  --raft-addr :7001 \
+  --http-addr :8001 \
+  --data-dir ./data/node-1 \
+  --raft-dir ./raft/node-1
+```
+
+Join another node through the first node's HTTP management endpoint:
+
+```sh
+go run ./cmd/pallasdb cluster start \
+  --node-id node-2 \
+  --grpc-addr :50052 \
+  --raft-addr :7002 \
+  --http-addr :8002 \
+  --data-dir ./data/node-2 \
+  --raft-dir ./raft/node-2 \
+  --join localhost:8001
+```
+
+### Shell completions
+
+```sh
+go run ./cmd/pallasdb completion bash
+go run ./cmd/pallasdb completion zsh
+go run ./cmd/pallasdb completion fish
+go run ./cmd/pallasdb completion powershell
+```
+
+## Protobuf/gRPC development
 
 Regenerate protobuf/gRPC code:
 
@@ -59,50 +120,30 @@ buf generate
 go test ./...
 ```
 
-Run the gRPC server:
-
-```sh
-go run ./cmd/pallasdb-grpc -addr :50051 -data-dir ./data
-```
-
-Quick gRPC workflow:
-
-```sh
-# Regenerate protobuf/gRPC stubs
-buf generate
-
-# Validate generated code and tests
-buf lint
-go test ./...
-
-# Start the server
-go run ./cmd/pallasdb-grpc -addr :50051 -data-dir ./data
-```
-
-Import the package:
+## Go API
 
 ```go
-import "github.com/teddymalhan/pallasdb/pallasdb"
+import "github.com/teddymalhan/pallasdb/db"
 
-db, err := gokv.OpenDB("path/to/data")
+kv, err := db.NewKV("path/to/data")
 if err != nil {
     log.Fatal(err)
 }
-defer db.Close()
-```
+defer kv.Close()
 
-## API
+_, err = kv.Set([]byte("hello"), []byte("world"))
+```
 
 | Symbol | Description |
 |---|---|
-| `OpenDB(path string) (*DB, error)` | Open or create a database at the given path. |
-| `DB.Insert(schema, row)` | Insert a row; fails if the key already exists. |
-| `DB.Upsert(schema, row)` | Insert or update a row. |
-| `DB.Update(schema, row)` | Update an existing row; fails if absent. |
-| `DB.Delete(schema, row)` | Delete a row by primary key. |
-| `DB.Select(schema, row) (Row, error)` | Fetch a single row by primary key. |
-| `DB.Seek(schema, row, cmp) RowIterator` | Open a range iterator from a given key. |
-| `DB.Range(schema, key1, key2) []Row` | Return all rows between two keys. |
+| `NewKV(path string, opts ...KVOption) (*KV, error)` | Open or create a local key-value store. |
+| `KV.Get(key)` | Fetch a value by key. |
+| `KV.Set(key, value)` | Insert or update a key. |
+| `KV.SetEx(key, value, mode)` | Insert, update, or upsert depending on mode. |
+| `KV.Del(key)` | Delete a key. |
+| `KV.NewTX()` | Open a transaction/snapshot. |
+| `KV.Compact()` | Run compaction once. |
+| `NewDB(path string, opts ...KVOption) (*DB, error)` | Open the higher-level table database API. |
 
 ## Maintainers
 

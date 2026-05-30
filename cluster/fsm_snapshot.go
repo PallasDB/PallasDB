@@ -6,13 +6,13 @@ import (
 	"io"
 
 	"github.com/hashicorp/raft"
-	"github.com/teddymalhan/pallasdb/pallasdb"
+	"github.com/teddymalhan/pallasdb/db"
 )
 
 // FSMSnapshot implements raft.FSMSnapshot.
 // It holds an open transaction providing a point-in-time consistent view.
 type FSMSnapshot struct {
-	iter    pallasdb.SortedKVIter
+	iter    db.SortedKVIter
 	cleanup func()
 }
 
@@ -25,7 +25,7 @@ func (s *FSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	// Collect all pairs first so we know the count.
 	type pair struct{ k, v []byte }
 	var pairs []pair
-	for ; s.iter.Valid(); {
+	for s.iter.Valid() {
 		pairs = append(pairs, pair{append([]byte(nil), s.iter.Key()...), append([]byte(nil), s.iter.Val()...)})
 		if err := s.iter.Next(); err != nil {
 			_ = sink.Cancel()
