@@ -52,8 +52,9 @@ type KVTX struct {
 		applyTX(*KVTX) error
 		abortTX(*KVTX)
 	}
-	updates SortedArray
-	levels  MergedSortedKV
+	updates  SortedArray
+	levels   MergedSortedKV
+	mainSnap []SortedFile
 }
 
 func (kv *KV) NewTX() *KVTX {
@@ -62,9 +63,11 @@ func (kv *KV) NewTX() *KVTX {
 
 	tx := &KVTX{snapshot: kv.snapshot, target: kv}
 	mem := kv.mem // copy!
+	tx.mainSnap = make([]SortedFile, len(kv.main))
+	copy(tx.mainSnap, kv.main)
 	tx.levels = MergedSortedKV{&tx.updates, &mem}
-	for i := range kv.main {
-		tx.levels = append(tx.levels, &kv.main[i])
+	for i := range tx.mainSnap {
+		tx.levels = append(tx.levels, &tx.mainSnap[i])
 	}
 	kv.ongoing = append(kv.ongoing, tx)
 	kv.threads.Add(1)
@@ -511,7 +514,10 @@ func (tx *KVTX) Range(start, stop []byte, desc bool) (*RangedKVIter, error) {
 }
 
 func (kv *KV) Compact() error {
-	if kv.mem.Size() >= kv.Options.LogShreshold {
+	kv.mu.Lock()
+	memSize := kv.mem.Size()
+	kv.mu.Unlock()
+	if memSize >= kv.Options.LogShreshold {
 		if err := kv.compactLog(); err != nil {
 			return err
 		}
