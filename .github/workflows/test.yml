@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         go:
-          - "1.24"
+          - "1.25"
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
         run: go test -v -race -shuffle=on -coverprofile=coverage.out ./...
 
       - name: Upload coverage
-        if: matrix.go == '1.24'
+        if: matrix.go == '1.25'
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.out

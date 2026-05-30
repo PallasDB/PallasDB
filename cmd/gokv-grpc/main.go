@@ -35,7 +35,11 @@ func main() {
 		}
 	}()
 
-	lis, err := net.Listen("tcp", *addr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	listenConfig := net.ListenConfig{}
+	lis, err := listenConfig.Listen(ctx, "tcp", *addr)
 	if err != nil {
 		logger.Error("listen", "addr", *addr, "err", err)
 		os.Exit(1)
@@ -45,9 +49,6 @@ func main() {
 		store,
 		grpc.ChainUnaryInterceptor(gokvgrpc.LoggingUnaryInterceptor(logger)),
 	)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	logger.Info("starting gRPC server", "addr", *addr, "data_dir", *dataDir)
 	if err := gokvgrpc.ServeWithGracefulStopTimeout(ctx, lis, srv, *shutdownTimeout); err != nil && !errors.Is(err, context.Canceled) {
