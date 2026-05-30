@@ -12,12 +12,72 @@ import (
 	"sync"
 )
 
+const (
+	defaultLogThreshold = 1000
+	defaultGrowthFactor = 2.0
+)
+
 type KVOptions struct {
 	Dirpath string
 	// LSM-Tree
+	// LogShreshold is kept for compatibility. Prefer LogThreshold.
 	LogShreshold int
+	LogThreshold int
 	GrowthFactor float32
 	AutoCompact  bool
+}
+
+type KVOption func(*KVOptions) error
+
+func WithLogThreshold(n int) KVOption {
+	return func(opts *KVOptions) error {
+		if n <= 0 {
+			return errors.New("log threshold must be positive")
+		}
+		opts.LogThreshold = n
+		return nil
+	}
+}
+
+func WithGrowthFactor(f float32) KVOption {
+	return func(opts *KVOptions) error {
+		if f < 2.0 {
+			return errors.New("growth factor must be at least 2")
+		}
+		opts.GrowthFactor = f
+		return nil
+	}
+}
+
+func WithAutoCompact(enabled bool) KVOption {
+	return func(opts *KVOptions) error {
+		opts.AutoCompact = enabled
+		return nil
+	}
+}
+
+func NewKV(dirpath string, opts ...KVOption) (*KV, error) {
+	options := KVOptions{Dirpath: dirpath}
+	for _, opt := range opts {
+		if err := opt(&options); err != nil {
+			return nil, err
+		}
+	}
+	kv := &KV{Options: options}
+	return kv, kv.Open()
+}
+
+func (opts *KVOptions) setDefaults() {
+	if opts.LogThreshold <= 0 {
+		opts.LogThreshold = opts.LogShreshold
+	}
+	if opts.LogThreshold <= 0 {
+		opts.LogThreshold = defaultLogThreshold
+	}
+	opts.LogShreshold = opts.LogThreshold
+	if opts.GrowthFactor < 2.0 {
+		opts.GrowthFactor = defaultGrowthFactor
+	}
 }
 
 type KV struct {
@@ -218,12 +278,7 @@ func (tx *KVTX) applyTX(inner *KVTX) error {
 func (tx *KVTX) abortTX(*KVTX) {}
 
 func (kv *KV) Open() (err error) {
-	if kv.Options.LogShreshold <= 0 {
-		kv.Options.LogShreshold = 1000
-	}
-	if kv.Options.GrowthFactor < 2.0 {
-		kv.Options.GrowthFactor = 2.0
-	}
+	kv.Options.setDefaults()
 	kv.closing = make(chan struct{})
 	kv.updated = make(chan struct{}, 1)
 	if err = kv.openAll(); err != nil {
@@ -254,8 +309,13 @@ func (kv *KV) startCompactThread() {
 }
 
 func (kv *KV) Close() error {
-	close(kv.closing)
-	kv.threads.Wait()
+	if kv.closing != nil {
+		close(kv.closing)
+		kv.threads.Wait()
+		kv.closing = nil
+	} else {
+		kv.threads.Wait()
+	}
 	return kv.MultiClosers.Close()
 }
 
@@ -307,7 +367,7 @@ func (kv *KV) openLog() error {
 		case EntryCommit:
 			committed = len(entries)
 		default:
-			panic("unreachable")
+			return fmt.Errorf("invalid log entry op: %d", ent.op)
 		}
 	}
 	entries = entries[:committed]
@@ -361,9 +421,10 @@ func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
 type UpdateMode int
 
 const (
-	ModeUpsert UpdateMode = 0 // insert or update
-	ModeInsert UpdateMode = 1 // insert new
-	ModeUpdate UpdateMode = 2 // update existing
+	ModeUnknown UpdateMode = iota
+	ModeUpsert             // insert or update
+	ModeInsert             // insert new
+	ModeUpdate             // update existing
 )
 
 func (tx *KVTX) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
@@ -380,7 +441,7 @@ func (tx *KVTX) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, er
 	case ModeUpdate:
 		updated = exist && !bytes.Equal(oldVal, val)
 	default:
-		panic("unreachable")
+		return false, fmt.Errorf("invalid update mode: %d", mode)
 	}
 	if updated {
 		_, err = tx.updates.Set(key, val)
@@ -526,7 +587,7 @@ func (kv *KV) Compact() error {
 	kv.mu.Lock()
 	memSize := kv.mem.Size()
 	kv.mu.Unlock()
-	if memSize >= kv.Options.LogShreshold {
+	if memSize >= kv.Options.LogThreshold {
 		if err := kv.compactLog(); err != nil {
 			return err
 		}

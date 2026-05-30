@@ -180,6 +180,32 @@ func TestKVUpdateMode(t *testing.T) {
 	assert.True(t, updated)
 }
 
+func TestNewKVOptionsAndClose(t *testing.T) {
+	kv, err := NewKV(t.TempDir(), WithLogThreshold(2), WithGrowthFactor(3), WithAutoCompact(true))
+	require.NoError(t, err)
+	assert.Equal(t, 2, kv.Options.LogThreshold)
+	assert.Equal(t, 2, kv.Options.LogShreshold)
+	assert.Equal(t, float32(3), kv.Options.GrowthFactor)
+	assert.True(t, kv.Options.AutoCompact)
+	assert.NoError(t, kv.Close())
+	assert.NoError(t, kv.Close())
+
+	_, err = NewKV(t.TempDir(), WithLogThreshold(0))
+	assert.Error(t, err)
+	_, err = NewKV(t.TempDir(), WithGrowthFactor(1))
+	assert.Error(t, err)
+}
+
+func TestKVInvalidUpdateMode(t *testing.T) {
+	kv := KV{Options: KVOptions{Dirpath: t.TempDir()}}
+	require.NoError(t, kv.Open())
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+
+	updated, err := kv.SetEx([]byte("k"), []byte("v"), ModeUnknown)
+	assert.False(t, updated)
+	assert.Error(t, err)
+}
+
 func TestKVRecovery(t *testing.T) {
 	kv := KV{}
 	kv.Options.Dirpath = t.TempDir()

@@ -11,6 +11,17 @@ type DB struct {
 	KV KV
 }
 
+func NewDB(dirpath string, opts ...KVOption) (*DB, error) {
+	options := KVOptions{Dirpath: dirpath}
+	for _, opt := range opts {
+		if err := opt(&options); err != nil {
+			return nil, err
+		}
+	}
+	db := &DB{KV: KV{Options: options}}
+	return db, db.Open()
+}
+
 type DBTX struct {
 	kv     *KVTX
 	tables map[string]Schema
@@ -66,7 +77,7 @@ func (tx *DBTX) update(schema *Schema, row Row, mode UpdateMode) (updated bool, 
 	case ModeUpdate:
 		updated = exist && !bytes.Equal(oldVal, val)
 	default:
-		panic("unreachable")
+		return false, errors.New("invalid update mode")
 	}
 	if !updated {
 		return false, nil
@@ -525,11 +536,11 @@ func matchRangeByIndex(schema *Schema, indexNo int, cond any) (*RangeReq, bool) 
 		if !ok || !isPKeyPrefix(schema, indexNo, cols1, cells1) {
 			return nil, false
 		}
-		op2, cols2, cells2, ok := matchCmp(binop.left)
+		op2, cols2, cells2, ok := matchCmp(binop.right)
 		if !ok || !isPKeyPrefix(schema, indexNo, cols2, cells2) {
 			return nil, false
 		}
-		if isDescending(op1) != isDescending(op2) {
+		if isDescending(op1) == isDescending(op2) {
 			return nil, false
 		}
 		if isDescending(op1) {

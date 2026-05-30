@@ -745,6 +745,26 @@ func TestUpsertAndUpdateModes(t *testing.T) {
 	assert.False(t, deleted)
 }
 
+func TestMatchRangeByIndexUsesBothBounds(t *testing.T) {
+	schema := &Schema{
+		Table:   "t",
+		Cols:    []Column{{Name: "k", Type: TypeI64}},
+		Indices: [][]int{{0}},
+	}
+	cond := &ExprBinOp{
+		op:    OP_AND,
+		left:  &ExprBinOp{op: OP_GE, left: "k", right: &Cell{Type: TypeI64, I64: 10}},
+		right: &ExprBinOp{op: OP_LE, left: "k", right: &Cell{Type: TypeI64, I64: 20}},
+	}
+
+	req, ok := matchRangeByIndex(schema, 0, cond)
+	require.True(t, ok)
+	assert.Equal(t, OP_GE, req.StartCmp)
+	assert.Equal(t, OP_LE, req.StopCmp)
+	assert.Equal(t, int64(10), req.Start[0].I64)
+	assert.Equal(t, int64(20), req.Stop[0].I64)
+}
+
 func TestSQLUnimplementedWhere(t *testing.T) {
 	db := DB{}
 	db.KV.Options.Dirpath = t.TempDir()
