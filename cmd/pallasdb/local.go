@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/teddymalhan/pallasdb/db"
 )
 
@@ -11,7 +12,7 @@ type localOptions struct {
 	dataDir string
 }
 
-func newLocalCommand(root *rootOptions) *cobra.Command {
+func newLocalCommand(root *rootOptions, config *configOptions) *cobra.Command {
 	opts := &localOptions{}
 	cmd := &cobra.Command{
 		Use:   "local",
@@ -19,6 +20,10 @@ func newLocalCommand(root *rootOptions) *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	cmd.PersistentFlags().StringVar(&opts.dataDir, "data-dir", "data", "database directory")
+	config.bindFlag(cmd.PersistentFlags(), "data-dir", "local.data_dir")
+	config.registerApply(func(v *viper.Viper) {
+		opts.dataDir = v.GetString("local.data_dir")
+	})
 
 	cmd.AddCommand(
 		newLocalGetCommand(root, opts),

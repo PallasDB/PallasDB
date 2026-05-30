@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/teddymalhan/pallasdb/cluster"
 	"github.com/teddymalhan/pallasdb/db"
 	grpcapi "github.com/teddymalhan/pallasdb/grpc"
@@ -27,17 +28,17 @@ type clusterStartOptions struct {
 	applyTimeout time.Duration
 }
 
-func newClusterCommand(root *rootOptions) *cobra.Command {
+func newClusterCommand(root *rootOptions, config *configOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
 		Short: "Run and manage a Raft-backed PallasDB cluster",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newClusterStartCommand(root))
+	cmd.AddCommand(newClusterStartCommand(root, config))
 	return cmd
 }
 
-func newClusterStartCommand(root *rootOptions) *cobra.Command {
+func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Command {
 	opts := &clusterStartOptions{}
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -115,7 +116,22 @@ func newClusterStartCommand(root *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.nodeID, "node-id", "", "unique node ID within the cluster")
 	cmd.Flags().StringVar(&opts.joinAddr, "join", "", "gRPC address of an existing node to join; empty to bootstrap")
 	cmd.Flags().DurationVar(&opts.applyTimeout, "apply-timeout", 10*time.Second, "Raft apply/barrier timeout")
-	mustMarkFlagRequired(cmd, "node-id")
+	config.bindFlag(cmd.Flags(), "grpc-addr", "cluster.grpc_addr")
+	config.bindFlag(cmd.Flags(), "data-dir", "cluster.data_dir")
+	config.bindFlag(cmd.Flags(), "raft-addr", "cluster.raft_addr")
+	config.bindFlag(cmd.Flags(), "raft-dir", "cluster.raft_dir")
+	config.bindFlag(cmd.Flags(), "node-id", "cluster.node_id")
+	config.bindFlag(cmd.Flags(), "join", "cluster.join")
+	config.bindFlag(cmd.Flags(), "apply-timeout", "cluster.apply_timeout")
+	config.registerApply(func(v *viper.Viper) {
+		opts.grpcAddr = v.GetString("cluster.grpc_addr")
+		opts.dataDir = v.GetString("cluster.data_dir")
+		opts.raftAddr = v.GetString("cluster.raft_addr")
+		opts.raftDir = v.GetString("cluster.raft_dir")
+		opts.nodeID = v.GetString("cluster.node_id")
+		opts.joinAddr = v.GetString("cluster.join")
+		opts.applyTimeout = v.GetDuration("cluster.apply_timeout")
+	})
 	return cmd
 }
 
@@ -132,10 +148,4 @@ func shutdownClusterNode(node *cluster.Node, runErr error) error {
 	fsmErr := node.FSM().Close()
 
 	return joinErrors(runErr, nodeErr, fsmErr)
-}
-
-func mustMarkFlagRequired(cmd *cobra.Command, name string) {
-	if err := cmd.MarkFlagRequired(name); err != nil {
-		panic(err)
-	}
 }

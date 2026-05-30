@@ -49,6 +49,47 @@ Show CLI help:
 go run ./cmd/pallasdb --help
 ```
 
+### Configuration
+
+PallasDB can read configuration from CLI flags, environment variables, and a YAML config file. Precedence is:
+
+```text
+flags > environment variables > config file > defaults
+```
+
+Use an explicit config file:
+
+```sh
+go run ./cmd/pallasdb --config ./pallasdb.example.yaml serve grpc
+```
+
+Environment variables use the `PALLASDB_` prefix and replace dots/dashes with underscores:
+
+```sh
+PALLASDB_LOG_FORMAT=json \
+PALLASDB_SERVE_GRPC_ADDR=:50052 \
+go run ./cmd/pallasdb serve grpc
+```
+
+Common keys:
+
+| Config key | Environment variable |
+|---|---|
+| `log.format` | `PALLASDB_LOG_FORMAT` |
+| `shutdown.timeout` | `PALLASDB_SHUTDOWN_TIMEOUT` |
+| `local.data_dir` | `PALLASDB_LOCAL_DATA_DIR` |
+| `serve.grpc.addr` | `PALLASDB_SERVE_GRPC_ADDR` |
+| `serve.grpc.data_dir` | `PALLASDB_SERVE_GRPC_DATA_DIR` |
+| `cluster.grpc_addr` | `PALLASDB_CLUSTER_GRPC_ADDR` |
+| `cluster.data_dir` | `PALLASDB_CLUSTER_DATA_DIR` |
+| `cluster.raft_addr` | `PALLASDB_CLUSTER_RAFT_ADDR` |
+| `cluster.raft_dir` | `PALLASDB_CLUSTER_RAFT_DIR` |
+| `cluster.node_id` | `PALLASDB_CLUSTER_NODE_ID` |
+| `cluster.join` | `PALLASDB_CLUSTER_JOIN` |
+| `cluster.apply_timeout` | `PALLASDB_CLUSTER_APPLY_TIMEOUT` |
+
+See [`pallasdb.example.yaml`](pallasdb.example.yaml) for a full example.
+
 ### Local key-value operations
 
 ```sh

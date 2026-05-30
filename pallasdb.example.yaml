@@ -1,0 +1,22 @@
+log:
+  format: text
+
+shutdown:
+  timeout: 15s
+
+local:
+  data_dir: data
+
+serve:
+  grpc:
+    addr: ":50051"
+    data_dir: data
+
+cluster:
+  grpc_addr: ":50051"
+  data_dir: data
+  raft_addr: ":7001"
+  raft_dir: raft
+  node_id: node-1
+  join: ""
+  apply_timeout: 10s

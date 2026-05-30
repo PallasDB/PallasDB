@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 const defaultShutdownTimeout = 15 * time.Second
@@ -26,6 +27,7 @@ type rootOptions struct {
 
 func newRootCommand() *cobra.Command {
 	opts := &rootOptions{}
+	config := newConfigOptions()
 
 	cmd := &cobra.Command{
 		Use:           "pallasdb",
@@ -33,15 +35,29 @@ func newRootCommand() *cobra.Command {
 		Long:          "PallasDB is an embedded and distributed key-value database built on an LSM storage engine and Raft replication.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := config.load(cmd); err != nil {
+				return err
+			}
+			config.apply()
+			return nil
+		},
 	}
 
+	cmd.PersistentFlags().StringVar(&config.configFile, "config", "", "config file path")
 	cmd.PersistentFlags().StringVar(&opts.logFormat, "log-format", "text", "log format: text or json")
 	cmd.PersistentFlags().DurationVar(&opts.shutdownTimeout, "shutdown-timeout", defaultShutdownTimeout, "graceful shutdown timeout")
+	config.bindFlag(cmd.PersistentFlags(), "log-format", "log.format")
+	config.bindFlag(cmd.PersistentFlags(), "shutdown-timeout", "shutdown.timeout")
+	config.registerApply(func(v *viper.Viper) {
+		opts.logFormat = v.GetString("log.format")
+		opts.shutdownTimeout = v.GetDuration("shutdown.timeout")
+	})
 
 	cmd.AddCommand(
-		newLocalCommand(opts),
-		newServeCommand(opts),
-		newClusterCommand(opts),
+		newLocalCommand(opts, config),
+		newServeCommand(opts, config),
+		newClusterCommand(opts, config),
 		newCompletionCommand(),
 		newVersionCommand(),
 	)

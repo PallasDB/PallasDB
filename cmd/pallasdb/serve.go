@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/teddymalhan/pallasdb/db"
 	grpcapi "github.com/teddymalhan/pallasdb/grpc"
 	"google.golang.org/grpc"
@@ -20,17 +21,17 @@ type serveGRPCOptions struct {
 	dataDir string
 }
 
-func newServeCommand(root *rootOptions) *cobra.Command {
+func newServeCommand(root *rootOptions, config *configOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run PallasDB servers",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newServeGRPCCommand(root))
+	cmd.AddCommand(newServeGRPCCommand(root, config))
 	return cmd
 }
 
-func newServeGRPCCommand(root *rootOptions) *cobra.Command {
+func newServeGRPCCommand(root *rootOptions, config *configOptions) *cobra.Command {
 	opts := &serveGRPCOptions{}
 	cmd := &cobra.Command{
 		Use:   "grpc",
@@ -80,5 +81,11 @@ func newServeGRPCCommand(root *rootOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.addr, "addr", ":50051", "gRPC listen address")
 	cmd.Flags().StringVar(&opts.dataDir, "data-dir", "data", "database directory")
+	config.bindFlag(cmd.Flags(), "addr", "serve.grpc.addr")
+	config.bindFlag(cmd.Flags(), "data-dir", "serve.grpc.data_dir")
+	config.registerApply(func(v *viper.Viper) {
+		opts.addr = v.GetString("serve.grpc.addr")
+		opts.dataDir = v.GetString("serve.grpc.data_dir")
+	})
 	return cmd
 }
