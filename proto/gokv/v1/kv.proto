@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package gokv.v1;
+
+option go_package = "github.com/teddymalhan/gokv/gokvpb/v1;gokvv1";
+
+service KVService {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Range(RangeRequest) returns (stream RangeResponse);
+}
+
+enum PutMode {
+  PUT_MODE_UNSPECIFIED = 0;
+  PUT_MODE_UPSERT = 1;
+  PUT_MODE_INSERT = 2;
+  PUT_MODE_UPDATE = 3;
+}
+
+message GetRequest {
+  bytes key = 1;
+}
+
+message GetResponse {
+  bytes value = 1;
+}
+
+message PutRequest {
+  bytes key = 1;
+  bytes value = 2;
+  PutMode mode = 3;
+}
+
+message PutResponse {
+  bool updated = 1;
+}
+
+message DeleteRequest {
+  bytes key = 1;
+}
+
+message DeleteResponse {
+  bool deleted = 1;
+}
+
+message RangeRequest {
+  bytes start = 1;
+  bytes stop = 2;
+  bool descending = 3;
+}
+
+message RangeResponse {
+  bytes key = 1;
+  bytes value = 2;
+}

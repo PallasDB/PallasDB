@@ -37,6 +37,43 @@ Run all tests:
 go test ./...
 ```
 
+Regenerate protobuf/gRPC code:
+
+```sh
+go install github.com/bufbuild/buf/cmd/buf@latest
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+buf generate
+```
+
+Validate protobuf/gRPC and Go code:
+
+```sh
+buf lint
+buf generate
+go test ./...
+```
+
+Run the gRPC server:
+
+```sh
+go run ./cmd/gokv-grpc -addr :50051 -data-dir ./data
+```
+
+Quick gRPC workflow:
+
+```sh
+# Regenerate protobuf/gRPC stubs
+buf generate
+
+# Validate generated code and tests
+buf lint
+go test ./...
+
+# Start the server
+go run ./cmd/gokv-grpc -addr :50051 -data-dir ./data
+```
+
 Import the package:
 
 ```go
