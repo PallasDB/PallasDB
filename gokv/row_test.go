@@ -1,4 +1,4 @@
-package db0904
+package gokv
 
 import (
 	"slices"

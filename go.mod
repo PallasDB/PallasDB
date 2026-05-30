@@ -1,4 +1,4 @@
-module example/hello
+module github.com/teddymalhan/gokv
 
 go 1.24
 

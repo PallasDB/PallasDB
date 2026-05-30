@@ -1,4 +1,4 @@
-package db0904
+package gokv
 
 func check(cond bool) {
 	if !cond {
