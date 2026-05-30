@@ -29,7 +29,7 @@ The implementation lives in the root package folder `gokv/`.
 Requires Go 1.25 or later.
 
 ```sh
-git clone https://github.com/teddymalhan/gokv.git
+git clone https://github.com/teddymalhan/pallasdb.git
 cd gokv
 go mod download
 ```
@@ -62,7 +62,7 @@ go test ./...
 Run the gRPC server:
 
 ```sh
-go run ./cmd/gokv-grpc -addr :50051 -data-dir ./data
+go run ./cmd/pallasdb-grpc -addr :50051 -data-dir ./data
 ```
 
 Quick gRPC workflow:
@@ -76,13 +76,13 @@ buf lint
 go test ./...
 
 # Start the server
-go run ./cmd/gokv-grpc -addr :50051 -data-dir ./data
+go run ./cmd/pallasdb-grpc -addr :50051 -data-dir ./data
 ```
 
 Import the package:
 
 ```go
-import "github.com/teddymalhan/gokv/gokv"
+import "github.com/teddymalhan/pallasdb/pallasdb"
 
 db, err := gokv.OpenDB("path/to/data")
 if err != nil {
@@ -110,7 +110,7 @@ defer db.Close()
 
 ## Contributing
 
-Questions and feedback are welcome via [GitHub Issues](https://github.com/teddymalhan/gokv/issues).
+Questions and feedback are welcome via [GitHub Issues](https://github.com/teddymalhan/pallasdb/issues).
 
 Before submitting changes, run:
 
