@@ -59,7 +59,8 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 				return err
 			}
 
-			store, err := db.NewKV(opts.dataDir, db.WithAutoCompact(false))
+			kvOpts := append([]db.KVOption{db.WithAutoCompact(false)}, kvOptsFromViper(config.viper)...)
+			store, err := db.NewKV(opts.dataDir, kvOpts...)
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
@@ -135,6 +136,9 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 	cmd.Flags().StringVar(&opts.serfAdvertiseAddr, "serf-advertise-addr", "", "Serf advertise address")
 	cmd.Flags().StringSliceVar(&opts.serfJoinAddrs, "serf-join", nil, "Serf addresses of existing nodes")
 	cmd.Flags().IntVar(&opts.serfEventBuffer, "serf-event-buffer", 64, "Serf event channel buffer size")
+	cmd.Flags().Bool("cache-enabled", false, "enable in-process read cache")
+	cmd.Flags().Int64("cache-max-cost", 32*1024*1024, "max cache bytes")
+	cmd.Flags().Int64("cache-num-counters", 1_000_000, "cache num counters (≈10× expected item count)")
 	config.bindFlag(cmd.Flags(), "grpc-addr", "cluster.grpc_addr")
 	config.bindFlag(cmd.Flags(), "data-dir", "cluster.data_dir")
 	config.bindFlag(cmd.Flags(), "raft-addr", "cluster.raft_addr")
@@ -147,6 +151,9 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 	config.bindFlag(cmd.Flags(), "serf-advertise-addr", "cluster.serf.advertise_addr")
 	config.bindFlag(cmd.Flags(), "serf-join", "cluster.serf.join")
 	config.bindFlag(cmd.Flags(), "serf-event-buffer", "cluster.serf.event_buffer")
+	config.bindFlag(cmd.Flags(), "cache-enabled", "cache.enabled")
+	config.bindFlag(cmd.Flags(), "cache-max-cost", "cache.max_cost_bytes")
+	config.bindFlag(cmd.Flags(), "cache-num-counters", "cache.num_counters")
 	config.registerApply(func(v *viper.Viper) {
 		opts.grpcAddr = v.GetString("cluster.grpc_addr")
 		opts.dataDir = v.GetString("cluster.data_dir")

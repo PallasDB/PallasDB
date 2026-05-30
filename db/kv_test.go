@@ -645,4 +645,94 @@ func TestKVCompactMultipleLevels(t *testing.T) {
 	}
 }
 
+func TestKVCache(t *testing.T) {
+	newCachedKV := func(t *testing.T) *KV {
+		t.Helper()
+		kv, err := NewKV(t.TempDir(), WithCache(8*1024*1024, 100_000))
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+		return kv
+	}
+
+	t.Run("disabled by default", func(t *testing.T) {
+		kv := KV{Options: KVOptions{Dirpath: t.TempDir()}}
+		require.NoError(t, kv.Open())
+		t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+		assert.Nil(t, kv.cache)
+		_, err := kv.Set([]byte("k"), []byte("v"))
+		require.NoError(t, err)
+		val, ok, err := kv.Get([]byte("k"))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, []byte("v"), val)
+	})
+
+	t.Run("hit after set", func(t *testing.T) {
+		kv := newCachedKV(t)
+		_, err := kv.Set([]byte("k1"), []byte("v1"))
+		require.NoError(t, err)
+		// populate cache via Get
+		val, ok, err := kv.Get([]byte("k1"))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, []byte("v1"), val)
+		kv.cache.Wait()
+		// second Get should be served from cache
+		val, ok, err = kv.Get([]byte("k1"))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, []byte("v1"), val)
+	})
+
+	t.Run("miss on unknown key", func(t *testing.T) {
+		kv := newCachedKV(t)
+		_, ok, err := kv.Get([]byte("missing"))
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("invalidation on del", func(t *testing.T) {
+		kv := newCachedKV(t)
+		_, err := kv.Set([]byte("k2"), []byte("v2"))
+		require.NoError(t, err)
+		// warm the cache
+		_, _, err = kv.Get([]byte("k2"))
+		require.NoError(t, err)
+		kv.cache.Wait()
+		// delete should evict from cache
+		deleted, err := kv.Del([]byte("k2"))
+		require.NoError(t, err)
+		assert.True(t, deleted)
+		// subsequent Get must return not-found
+		_, ok, err := kv.Get([]byte("k2"))
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("invalidation on setex", func(t *testing.T) {
+		kv := newCachedKV(t)
+		_, err := kv.Set([]byte("k3"), []byte("old"))
+		require.NoError(t, err)
+		// warm the cache
+		_, _, err = kv.Get([]byte("k3"))
+		require.NoError(t, err)
+		kv.cache.Wait()
+		// overwrite
+		_, err = kv.SetEx([]byte("k3"), []byte("new"), ModeUpsert)
+		require.NoError(t, err)
+		// cache entry must have been evicted; Get must return new value from storage
+		val, ok, err := kv.Get([]byte("k3"))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, []byte("new"), val)
+	})
+
+	t.Run("with cache option validation", func(t *testing.T) {
+		_, err := NewKV(t.TempDir(), WithCache(0, 100_000))
+		assert.Error(t, err)
+		_, err = NewKV(t.TempDir(), WithCache(1024, 0))
+		assert.Error(t, err)
+	})
+}
+
 // QzBQWVJJOUhU https://trialofcode.org/

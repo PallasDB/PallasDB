@@ -54,6 +54,9 @@ func setConfigDefaults(v *viper.Viper) {
 	v.SetDefault("cluster.serf.advertise_addr", "")
 	v.SetDefault("cluster.serf.join", []string{})
 	v.SetDefault("cluster.serf.event_buffer", 64)
+	v.SetDefault("cache.enabled", false)
+	v.SetDefault("cache.max_cost_bytes", int64(32*1024*1024))
+	v.SetDefault("cache.num_counters", int64(1_000_000))
 }
 
 func (opts *configOptions) load(_ *cobra.Command) error {

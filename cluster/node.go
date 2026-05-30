@@ -81,7 +81,7 @@ func Open(kvStore *db.KV, cfg Config) (*Node, error) {
 		return nil, fmt.Errorf("new snapshot store: %w", err)
 	}
 
-	fsm := NewFSM(kvStore, kvStore.Options.Dirpath)
+	fsm := NewFSM(kvStore, kvStore.Options.Dirpath, kvStore.Options.CacheKVOpts()...)
 
 	r, err := raft.NewRaft(rc, fsm, boltStore, boltStore, snapStore, transport)
 	if err != nil {

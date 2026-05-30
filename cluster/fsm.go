@@ -22,10 +22,11 @@ type FSM struct {
 	mu      sync.RWMutex
 	store   *db.KV
 	dirpath string
+	kvOpts  []db.KVOption
 }
 
-func NewFSM(store *db.KV, dirpath string) *FSM {
-	return &FSM{store: store, dirpath: dirpath}
+func NewFSM(store *db.KV, dirpath string, kvOpts ...db.KVOption) *FSM {
+	return &FSM{store: store, dirpath: dirpath, kvOpts: kvOpts}
 }
 
 // Apply is called by the Raft library after a log entry is committed.
@@ -81,7 +82,7 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 	restoreDir := f.dirpath + ".restore"
 	_ = os.RemoveAll(restoreDir)
 
-	fresh, err := db.NewKV(restoreDir, db.WithAutoCompact(false))
+	fresh, err := db.NewKV(restoreDir, append([]db.KVOption{db.WithAutoCompact(false)}, f.kvOpts...)...)
 	if err != nil {
 		return fmt.Errorf("open restore store: %w", err)
 	}
@@ -113,7 +114,7 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 		return fmt.Errorf("rename restore dir: %w", err)
 	}
 
-	f.store, err = db.NewKV(f.dirpath, db.WithAutoCompact(false))
+	f.store, err = db.NewKV(f.dirpath, append([]db.KVOption{db.WithAutoCompact(false)}, f.kvOpts...)...)
 	if err != nil {
 		return fmt.Errorf("reopen restored store: %w", err)
 	}

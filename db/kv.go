@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+
+	"github.com/dgraph-io/ristretto/v2"
 )
 
 const (
@@ -25,6 +27,10 @@ type KVOptions struct {
 	LogThreshold int
 	GrowthFactor float32
 	AutoCompact  bool
+	// Cache (zero value = disabled)
+	CacheEnabled     bool
+	CacheMaxCost     int64
+	CacheNumCounters int64
 }
 
 type KVOption func(*KVOptions) error
@@ -56,6 +62,21 @@ func WithAutoCompact(enabled bool) KVOption {
 	}
 }
 
+func WithCache(maxCostBytes, numCounters int64) KVOption {
+	return func(opts *KVOptions) error {
+		if maxCostBytes <= 0 {
+			return errors.New("cache max cost must be positive")
+		}
+		if numCounters <= 0 {
+			return errors.New("cache num counters must be positive")
+		}
+		opts.CacheEnabled = true
+		opts.CacheMaxCost = maxCostBytes
+		opts.CacheNumCounters = numCounters
+		return nil
+	}
+}
+
 func NewKV(dirpath string, opts ...KVOption) (*KV, error) {
 	options := KVOptions{Dirpath: dirpath}
 	for _, opt := range opts {
@@ -65,6 +86,15 @@ func NewKV(dirpath string, opts ...KVOption) (*KV, error) {
 	}
 	kv := &KV{Options: options}
 	return kv, kv.Open()
+}
+
+// CacheKVOpts returns a WithCache option if caching is configured, or nil otherwise.
+// Useful for passing cache settings to subsystems that create their own KV stores.
+func (opts *KVOptions) CacheKVOpts() []KVOption {
+	if !opts.CacheEnabled || opts.CacheMaxCost == 0 {
+		return nil
+	}
+	return []KVOption{WithCache(opts.CacheMaxCost, opts.CacheNumCounters)}
 }
 
 func (opts *KVOptions) setDefaults() {
@@ -86,9 +116,10 @@ type KV struct {
 	meta    KVMetaStore
 	version uint64
 	// data
-	log  Log
-	mem  SortedArray
-	main []SortedFile
+	log   Log
+	mem   SortedArray
+	main  []SortedFile
+	cache *ristretto.Cache[string, []byte]
 	// transactions
 	snapshot uint64
 	history  []UpdatedKey
@@ -277,8 +308,27 @@ func (tx *KVTX) applyTX(inner *KVTX) error {
 
 func (tx *KVTX) abortTX(*KVTX) {}
 
+func (kv *KV) openCache() error {
+	if !kv.Options.CacheEnabled || kv.Options.CacheMaxCost == 0 {
+		return nil
+	}
+	c, err := ristretto.NewCache(&ristretto.Config[string, []byte]{
+		NumCounters: kv.Options.CacheNumCounters,
+		MaxCost:     kv.Options.CacheMaxCost,
+		BufferItems: 64,
+	})
+	if err != nil {
+		return fmt.Errorf("open cache: %w", err)
+	}
+	kv.cache = c
+	return nil
+}
+
 func (kv *KV) Open() (err error) {
 	kv.Options.setDefaults()
+	if err = kv.openCache(); err != nil {
+		return err
+	}
 	kv.closing = make(chan struct{})
 	kv.updated = make(chan struct{}, 1)
 	if err = kv.openAll(); err != nil {
@@ -315,6 +365,10 @@ func (kv *KV) Close() error {
 		kv.closing = nil
 	} else {
 		kv.threads.Wait()
+	}
+	if kv.cache != nil {
+		kv.cache.Close()
+		kv.cache = nil
 	}
 	return kv.MultiClosers.Close()
 }
@@ -413,9 +467,18 @@ func (tx *KVTX) Get(key []byte) (val []byte, ok bool, err error) {
 }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {
+	if kv.cache != nil {
+		if v, found := kv.cache.Get(string(key)); found {
+			return v, true, nil
+		}
+	}
 	tx := kv.NewTX()
 	defer tx.Abort()
-	return tx.Get(key)
+	val, ok, err = tx.Get(key)
+	if err == nil && ok && kv.cache != nil {
+		kv.cache.Set(string(key), val, int64(len(val)))
+	}
+	return val, ok, err
 }
 
 type UpdateMode int
@@ -453,7 +516,11 @@ func (tx *KVTX) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, er
 func (kv *KV) SetEx(key []byte, val []byte, mode UpdateMode) (updated bool, err error) {
 	tx := kv.NewTX()
 	updated, err = tx.SetEx(key, val, mode)
-	return abortOrCommit(tx, updated, err)
+	updated, err = abortOrCommit(tx, updated, err)
+	if err == nil && kv.cache != nil {
+		kv.cache.Del(string(key))
+	}
+	return updated, err
 }
 
 type TXLike interface {
@@ -490,7 +557,11 @@ func (tx *KVTX) Del(key []byte) (deleted bool, err error) {
 func (kv *KV) Del(key []byte) (deleted bool, err error) {
 	tx := kv.NewTX()
 	deleted, err = tx.Del(key)
-	return abortOrCommit(tx, deleted, err)
+	deleted, err = abortOrCommit(tx, deleted, err)
+	if err == nil && deleted && kv.cache != nil {
+		kv.cache.Del(string(key))
+	}
+	return deleted, err
 }
 
 // IterAll returns an iterator over all live keys in the store and a cleanup

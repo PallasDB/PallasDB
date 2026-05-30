@@ -16,6 +16,16 @@ import (
 	"google.golang.org/grpc"
 )
 
+func kvOptsFromViper(v *viper.Viper) []db.KVOption {
+	if !v.GetBool("cache.enabled") {
+		return nil
+	}
+	return []db.KVOption{db.WithCache(
+		v.GetInt64("cache.max_cost_bytes"),
+		v.GetInt64("cache.num_counters"),
+	)}
+}
+
 type serveGRPCOptions struct {
 	addr    string
 	dataDir string
@@ -46,7 +56,7 @@ func newServeGRPCCommand(root *rootOptions, config *configOptions) *cobra.Comman
 				return err
 			}
 
-			store, err := db.NewKV(opts.dataDir)
+			store, err := db.NewKV(opts.dataDir, kvOptsFromViper(config.viper)...)
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
@@ -81,8 +91,14 @@ func newServeGRPCCommand(root *rootOptions, config *configOptions) *cobra.Comman
 	}
 	cmd.Flags().StringVar(&opts.addr, "addr", ":50051", "gRPC listen address")
 	cmd.Flags().StringVar(&opts.dataDir, "data-dir", "data", "database directory")
+	cmd.Flags().Bool("cache-enabled", false, "enable in-process read cache")
+	cmd.Flags().Int64("cache-max-cost", 32*1024*1024, "max cache bytes")
+	cmd.Flags().Int64("cache-num-counters", 1_000_000, "cache num counters (≈10× expected item count)")
 	config.bindFlag(cmd.Flags(), "addr", "serve.grpc.addr")
 	config.bindFlag(cmd.Flags(), "data-dir", "serve.grpc.data_dir")
+	config.bindFlag(cmd.Flags(), "cache-enabled", "cache.enabled")
+	config.bindFlag(cmd.Flags(), "cache-max-cost", "cache.max_cost_bytes")
+	config.bindFlag(cmd.Flags(), "cache-num-counters", "cache.num_counters")
 	config.registerApply(func(v *viper.Viper) {
 		opts.addr = v.GetString("serve.grpc.addr")
 		opts.dataDir = v.GetString("serve.grpc.data_dir")
