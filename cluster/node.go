@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
+	"github.com/teddymalhan/pallasdb/cluster/discovery"
 	"github.com/teddymalhan/pallasdb/db"
 	pbv1 "github.com/teddymalhan/pallasdb/pb/v1"
 	bolt "go.etcd.io/bbolt"
@@ -20,11 +21,18 @@ import (
 // Config holds all parameters needed to start a cluster node.
 type Config struct {
 	NodeID    string
+	GRPCAddr  string        // gRPC address advertised through discovery
 	RaftAddr  string        // TCP address for Raft transport, e.g. ":7001"
 	RaftDir   string        // directory for BoltDB log store and snapshots
 	Bootstrap bool          // true only when starting the very first node of a fresh cluster
 	JoinAddr  string        // gRPC address of an existing node; empty if bootstrapping
 	Timeout   time.Duration // Raft apply timeout (default 10s)
+
+	SerfEnabled       bool
+	SerfAddr          string
+	SerfAdvertiseAddr string
+	SerfJoinAddrs     []string
+	SerfEventBuffer   int
 }
 
 // Node wraps a raft.Raft instance with its supporting infrastructure.
@@ -35,6 +43,7 @@ type Node struct {
 	logStore  *raftboltdb.BoltStore
 	snapStore raft.SnapshotStore
 	cfg       Config
+	discovery *discovery.SerfDiscovery
 }
 
 // Open initializes all Raft infrastructure and starts the node.
@@ -107,6 +116,28 @@ func Open(kvStore *db.KV, cfg Config) (*Node, error) {
 		cfg:       cfg,
 	}
 
+	if cfg.SerfEnabled {
+		disc, err := discovery.NewSerfDiscovery(discovery.Config{
+			NodeID:            cfg.NodeID,
+			GRPCAddr:          cfg.GRPCAddr,
+			RaftAddr:          cfg.RaftAddr,
+			SerfAddr:          cfg.SerfAddr,
+			SerfAdvertiseAddr: cfg.SerfAdvertiseAddr,
+			JoinAddrs:         cfg.SerfJoinAddrs,
+			EventBuffer:       cfg.SerfEventBuffer,
+		})
+		if err != nil {
+			_ = node.Shutdown()
+			return nil, fmt.Errorf("create serf discovery: %w", err)
+		}
+		if err := disc.Start(); err != nil {
+			_ = node.Shutdown()
+			return nil, fmt.Errorf("start serf discovery: %w", err)
+		}
+		node.discovery = disc
+		go node.handleDiscoveryEvents(disc.Events())
+	}
+
 	if cfg.JoinAddr != "" {
 		if err := sendJoinRequest(cfg.JoinAddr, cfg.NodeID, cfg.RaftAddr, cfg.Timeout); err != nil {
 			_ = node.Shutdown()
@@ -135,8 +166,35 @@ func (n *Node) AddVoter(nodeID, addr string) error {
 	return f.Error()
 }
 
-// Shutdown cleanly stops Raft and closes BoltDB.
+// DiscoveryMembers returns the current known Serf discovery members.
+func (n *Node) DiscoveryMembers() []discovery.NodeInfo {
+	if n.discovery == nil {
+		return nil
+	}
+	return n.discovery.Members()
+}
+
+func (n *Node) handleDiscoveryEvents(events <-chan discovery.Event) {
+	for event := range events {
+		switch event.Type {
+		case discovery.EventMemberJoin, discovery.EventMemberUpdate:
+			n.addDiscoveredVoter(event.Member)
+		}
+	}
+}
+
+func (n *Node) addDiscoveredVoter(member discovery.NodeInfo) {
+	if n.raft.State() != raft.Leader || member.NodeID == n.cfg.NodeID || member.RaftAddr == "" {
+		return
+	}
+	_ = n.AddVoter(member.NodeID, member.RaftAddr)
+}
+
+// Shutdown cleanly stops discovery, Raft, and BoltDB.
 func (n *Node) Shutdown() error {
+	if n.discovery != nil {
+		_ = n.discovery.Shutdown()
+	}
 	if f := n.raft.Shutdown(); f.Error() != nil {
 		return f.Error()
 	}

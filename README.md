@@ -87,6 +87,11 @@ Common keys:
 | `cluster.node_id` | `PALLASDB_CLUSTER_NODE_ID` |
 | `cluster.join` | `PALLASDB_CLUSTER_JOIN` |
 | `cluster.apply_timeout` | `PALLASDB_CLUSTER_APPLY_TIMEOUT` |
+| `cluster.serf.enabled` | `PALLASDB_CLUSTER_SERF_ENABLED` |
+| `cluster.serf.addr` | `PALLASDB_CLUSTER_SERF_ADDR` |
+| `cluster.serf.advertise_addr` | `PALLASDB_CLUSTER_SERF_ADVERTISE_ADDR` |
+| `cluster.serf.join` | `PALLASDB_CLUSTER_SERF_JOIN` |
+| `cluster.serf.event_buffer` | `PALLASDB_CLUSTER_SERF_EVENT_BUFFER` |
 
 See [`pallasdb.example.yaml`](pallasdb.example.yaml) for a full example.
 
@@ -115,21 +120,25 @@ go run ./cmd/pallasdb cluster start \
   --node-id node-1 \
   --grpc-addr :50051 \
   --raft-addr :7001 \
+  --serf-addr :7946 \
   --data-dir ./data/node-1 \
   --raft-dir ./raft/node-1
 ```
 
-Join another node through the first node's gRPC management service:
+Join another node through Serf gossip discovery:
 
 ```sh
 go run ./cmd/pallasdb cluster start \
   --node-id node-2 \
   --grpc-addr :50052 \
   --raft-addr :7002 \
+  --serf-addr :7947 \
+  --serf-join localhost:7946 \
   --data-dir ./data/node-2 \
-  --raft-dir ./raft/node-2 \
-  --join localhost:50051
+  --raft-dir ./raft/node-2
 ```
+
+The older explicit gRPC join path is still available with `--join localhost:50051`; use `--serf-enabled=false` if you do not want the node to bind a Serf gossip port.
 
 ### Shell completions
 

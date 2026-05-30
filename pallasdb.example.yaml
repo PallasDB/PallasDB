@@ -20,3 +20,9 @@ cluster:
   node_id: node-1
   join: ""
   apply_timeout: 10s
+  serf:
+    enabled: true
+    addr: ":7946"
+    advertise_addr: ""
+    join: []
+    event_buffer: 64

@@ -13,6 +13,8 @@ service KVService {
 
 service ClusterService {
   rpc Join(JoinRequest) returns (JoinResponse);
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
+  rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
 }
 
 enum PutMode {
@@ -65,3 +67,34 @@ message JoinRequest {
 }
 
 message JoinResponse {}
+
+message ListMembersRequest {}
+
+message ListMembersResponse {
+  repeated ClusterMember members = 1;
+}
+
+message ClusterMember {
+  string node_id = 1;
+  string grpc_addr = 2;
+  string raft_addr = 3;
+  string serf_addr = 4;
+  ClusterMemberStatus status = 5;
+  bool raft_voter = 6;
+  bool leader = 7;
+}
+
+enum ClusterMemberStatus {
+  CLUSTER_MEMBER_STATUS_UNSPECIFIED = 0;
+  CLUSTER_MEMBER_STATUS_ALIVE = 1;
+  CLUSTER_MEMBER_STATUS_LEAVING = 2;
+  CLUSTER_MEMBER_STATUS_LEFT = 3;
+  CLUSTER_MEMBER_STATUS_FAILED = 4;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+  string node_id = 1;
+  string raft_addr = 2;
+}

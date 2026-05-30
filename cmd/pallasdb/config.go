@@ -49,6 +49,11 @@ func setConfigDefaults(v *viper.Viper) {
 	v.SetDefault("cluster.node_id", "")
 	v.SetDefault("cluster.join", "")
 	v.SetDefault("cluster.apply_timeout", 10*time.Second)
+	v.SetDefault("cluster.serf.enabled", true)
+	v.SetDefault("cluster.serf.addr", ":7946")
+	v.SetDefault("cluster.serf.advertise_addr", "")
+	v.SetDefault("cluster.serf.join", []string{})
+	v.SetDefault("cluster.serf.event_buffer", 64)
 }
 
 func (opts *configOptions) load(_ *cobra.Command) error {

@@ -237,7 +237,9 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	ClusterService_Join_FullMethodName = "/pallasdb.v1.ClusterService/Join"
+	ClusterService_Join_FullMethodName        = "/pallasdb.v1.ClusterService/Join"
+	ClusterService_ListMembers_FullMethodName = "/pallasdb.v1.ClusterService/ListMembers"
+	ClusterService_GetLeader_FullMethodName   = "/pallasdb.v1.ClusterService/GetLeader"
 )
 
 // ClusterServiceClient is the client API for ClusterService service.
@@ -245,6 +247,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ClusterServiceClient interface {
 	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
+	ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error)
+	GetLeader(ctx context.Context, in *GetLeaderRequest, opts ...grpc.CallOption) (*GetLeaderResponse, error)
 }
 
 type clusterServiceClient struct {
@@ -265,11 +269,33 @@ func (c *clusterServiceClient) Join(ctx context.Context, in *JoinRequest, opts .
 	return out, nil
 }
 
+func (c *clusterServiceClient) ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMembersResponse)
+	err := c.cc.Invoke(ctx, ClusterService_ListMembers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clusterServiceClient) GetLeader(ctx context.Context, in *GetLeaderRequest, opts ...grpc.CallOption) (*GetLeaderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetLeaderResponse)
+	err := c.cc.Invoke(ctx, ClusterService_GetLeader_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClusterServiceServer is the server API for ClusterService service.
 // All implementations should embed UnimplementedClusterServiceServer
 // for forward compatibility.
 type ClusterServiceServer interface {
 	Join(context.Context, *JoinRequest) (*JoinResponse, error)
+	ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error)
+	GetLeader(context.Context, *GetLeaderRequest) (*GetLeaderResponse, error)
 }
 
 // UnimplementedClusterServiceServer should be embedded to have
@@ -281,6 +307,12 @@ type UnimplementedClusterServiceServer struct{}
 
 func (UnimplementedClusterServiceServer) Join(context.Context, *JoinRequest) (*JoinResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Join not implemented")
+}
+func (UnimplementedClusterServiceServer) ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
+}
+func (UnimplementedClusterServiceServer) GetLeader(context.Context, *GetLeaderRequest) (*GetLeaderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLeader not implemented")
 }
 func (UnimplementedClusterServiceServer) testEmbeddedByValue() {}
 
@@ -320,6 +352,42 @@ func _ClusterService_Join_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClusterService_ListMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMembersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).ListMembers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_ListMembers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).ListMembers(ctx, req.(*ListMembersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ClusterService_GetLeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).GetLeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_GetLeader_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).GetLeader(ctx, req.(*GetLeaderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ClusterService_ServiceDesc is the grpc.ServiceDesc for ClusterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -330,6 +398,14 @@ var ClusterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Join",
 			Handler:    _ClusterService_Join_Handler,
+		},
+		{
+			MethodName: "ListMembers",
+			Handler:    _ClusterService_ListMembers_Handler,
+		},
+		{
+			MethodName: "GetLeader",
+			Handler:    _ClusterService_GetLeader_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

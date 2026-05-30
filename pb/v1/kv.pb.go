@@ -73,6 +73,61 @@ func (PutMode) EnumDescriptor() ([]byte, []int) {
 	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{0}
 }
 
+type ClusterMemberStatus int32
+
+const (
+	ClusterMemberStatus_CLUSTER_MEMBER_STATUS_UNSPECIFIED ClusterMemberStatus = 0
+	ClusterMemberStatus_CLUSTER_MEMBER_STATUS_ALIVE       ClusterMemberStatus = 1
+	ClusterMemberStatus_CLUSTER_MEMBER_STATUS_LEAVING     ClusterMemberStatus = 2
+	ClusterMemberStatus_CLUSTER_MEMBER_STATUS_LEFT        ClusterMemberStatus = 3
+	ClusterMemberStatus_CLUSTER_MEMBER_STATUS_FAILED      ClusterMemberStatus = 4
+)
+
+// Enum value maps for ClusterMemberStatus.
+var (
+	ClusterMemberStatus_name = map[int32]string{
+		0: "CLUSTER_MEMBER_STATUS_UNSPECIFIED",
+		1: "CLUSTER_MEMBER_STATUS_ALIVE",
+		2: "CLUSTER_MEMBER_STATUS_LEAVING",
+		3: "CLUSTER_MEMBER_STATUS_LEFT",
+		4: "CLUSTER_MEMBER_STATUS_FAILED",
+	}
+	ClusterMemberStatus_value = map[string]int32{
+		"CLUSTER_MEMBER_STATUS_UNSPECIFIED": 0,
+		"CLUSTER_MEMBER_STATUS_ALIVE":       1,
+		"CLUSTER_MEMBER_STATUS_LEAVING":     2,
+		"CLUSTER_MEMBER_STATUS_LEFT":        3,
+		"CLUSTER_MEMBER_STATUS_FAILED":      4,
+	}
+)
+
+func (x ClusterMemberStatus) Enum() *ClusterMemberStatus {
+	p := new(ClusterMemberStatus)
+	*p = x
+	return p
+}
+
+func (x ClusterMemberStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClusterMemberStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_pallasdb_v1_kv_proto_enumTypes[1].Descriptor()
+}
+
+func (ClusterMemberStatus) Type() protoreflect.EnumType {
+	return &file_pallasdb_v1_kv_proto_enumTypes[1]
+}
+
+func (x ClusterMemberStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClusterMemberStatus.Descriptor instead.
+func (ClusterMemberStatus) EnumDescriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{1}
+}
+
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -553,6 +608,266 @@ func (*JoinResponse) Descriptor() ([]byte, []int) {
 	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{9}
 }
 
+type ListMembersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMembersRequest) Reset() {
+	*x = ListMembersRequest{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMembersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMembersRequest) ProtoMessage() {}
+
+func (x *ListMembersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMembersRequest.ProtoReflect.Descriptor instead.
+func (*ListMembersRequest) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{10}
+}
+
+type ListMembersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Members       []*ClusterMember       `protobuf:"bytes,1,rep,name=members,proto3" json:"members,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMembersResponse) Reset() {
+	*x = ListMembersResponse{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMembersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMembersResponse) ProtoMessage() {}
+
+func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMembersResponse.ProtoReflect.Descriptor instead.
+func (*ListMembersResponse) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListMembersResponse) GetMembers() []*ClusterMember {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+type ClusterMember struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	GrpcAddr      string                 `protobuf:"bytes,2,opt,name=grpc_addr,json=grpcAddr,proto3" json:"grpc_addr,omitempty"`
+	RaftAddr      string                 `protobuf:"bytes,3,opt,name=raft_addr,json=raftAddr,proto3" json:"raft_addr,omitempty"`
+	SerfAddr      string                 `protobuf:"bytes,4,opt,name=serf_addr,json=serfAddr,proto3" json:"serf_addr,omitempty"`
+	Status        ClusterMemberStatus    `protobuf:"varint,5,opt,name=status,proto3,enum=pallasdb.v1.ClusterMemberStatus" json:"status,omitempty"`
+	RaftVoter     bool                   `protobuf:"varint,6,opt,name=raft_voter,json=raftVoter,proto3" json:"raft_voter,omitempty"`
+	Leader        bool                   `protobuf:"varint,7,opt,name=leader,proto3" json:"leader,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClusterMember) Reset() {
+	*x = ClusterMember{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClusterMember) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClusterMember) ProtoMessage() {}
+
+func (x *ClusterMember) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClusterMember.ProtoReflect.Descriptor instead.
+func (*ClusterMember) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ClusterMember) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ClusterMember) GetGrpcAddr() string {
+	if x != nil {
+		return x.GrpcAddr
+	}
+	return ""
+}
+
+func (x *ClusterMember) GetRaftAddr() string {
+	if x != nil {
+		return x.RaftAddr
+	}
+	return ""
+}
+
+func (x *ClusterMember) GetSerfAddr() string {
+	if x != nil {
+		return x.SerfAddr
+	}
+	return ""
+}
+
+func (x *ClusterMember) GetStatus() ClusterMemberStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ClusterMemberStatus_CLUSTER_MEMBER_STATUS_UNSPECIFIED
+}
+
+func (x *ClusterMember) GetRaftVoter() bool {
+	if x != nil {
+		return x.RaftVoter
+	}
+	return false
+}
+
+func (x *ClusterMember) GetLeader() bool {
+	if x != nil {
+		return x.Leader
+	}
+	return false
+}
+
+type GetLeaderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLeaderRequest) Reset() {
+	*x = GetLeaderRequest{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLeaderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLeaderRequest) ProtoMessage() {}
+
+func (x *GetLeaderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLeaderRequest.ProtoReflect.Descriptor instead.
+func (*GetLeaderRequest) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{13}
+}
+
+type GetLeaderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	RaftAddr      string                 `protobuf:"bytes,2,opt,name=raft_addr,json=raftAddr,proto3" json:"raft_addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLeaderResponse) Reset() {
+	*x = GetLeaderResponse{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLeaderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLeaderResponse) ProtoMessage() {}
+
+func (x *GetLeaderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLeaderResponse.ProtoReflect.Descriptor instead.
+func (*GetLeaderResponse) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetLeaderResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *GetLeaderResponse) GetRaftAddr() string {
+	if x != nil {
+		return x.RaftAddr
+	}
+	return ""
+}
+
 var File_pallasdb_v1_kv_proto protoreflect.FileDescriptor
 
 const file_pallasdb_v1_kv_proto_rawDesc = "" +
@@ -586,19 +901,43 @@ const file_pallasdb_v1_kv_proto_rawDesc = "" +
 	"\vJoinRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\traft_addr\x18\x02 \x01(\tR\braftAddr\"\x0e\n" +
-	"\fJoinResponse*b\n" +
+	"\fJoinResponse\"\x14\n" +
+	"\x12ListMembersRequest\"K\n" +
+	"\x13ListMembersResponse\x124\n" +
+	"\amembers\x18\x01 \x03(\v2\x1a.pallasdb.v1.ClusterMemberR\amembers\"\xf0\x01\n" +
+	"\rClusterMember\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
+	"\tgrpc_addr\x18\x02 \x01(\tR\bgrpcAddr\x12\x1b\n" +
+	"\traft_addr\x18\x03 \x01(\tR\braftAddr\x12\x1b\n" +
+	"\tserf_addr\x18\x04 \x01(\tR\bserfAddr\x128\n" +
+	"\x06status\x18\x05 \x01(\x0e2 .pallasdb.v1.ClusterMemberStatusR\x06status\x12\x1d\n" +
+	"\n" +
+	"raft_voter\x18\x06 \x01(\bR\traftVoter\x12\x16\n" +
+	"\x06leader\x18\a \x01(\bR\x06leader\"\x12\n" +
+	"\x10GetLeaderRequest\"I\n" +
+	"\x11GetLeaderResponse\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
+	"\traft_addr\x18\x02 \x01(\tR\braftAddr*b\n" +
 	"\aPutMode\x12\x18\n" +
 	"\x14PUT_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPUT_MODE_UPSERT\x10\x01\x12\x13\n" +
 	"\x0fPUT_MODE_INSERT\x10\x02\x12\x13\n" +
-	"\x0fPUT_MODE_UPDATE\x10\x032\x84\x02\n" +
+	"\x0fPUT_MODE_UPDATE\x10\x03*\xc2\x01\n" +
+	"\x13ClusterMemberStatus\x12%\n" +
+	"!CLUSTER_MEMBER_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bCLUSTER_MEMBER_STATUS_ALIVE\x10\x01\x12!\n" +
+	"\x1dCLUSTER_MEMBER_STATUS_LEAVING\x10\x02\x12\x1e\n" +
+	"\x1aCLUSTER_MEMBER_STATUS_LEFT\x10\x03\x12 \n" +
+	"\x1cCLUSTER_MEMBER_STATUS_FAILED\x10\x042\x84\x02\n" +
 	"\tKVService\x128\n" +
 	"\x03Get\x12\x17.pallasdb.v1.GetRequest\x1a\x18.pallasdb.v1.GetResponse\x128\n" +
 	"\x03Put\x12\x17.pallasdb.v1.PutRequest\x1a\x18.pallasdb.v1.PutResponse\x12A\n" +
 	"\x06Delete\x12\x1a.pallasdb.v1.DeleteRequest\x1a\x1b.pallasdb.v1.DeleteResponse\x12@\n" +
-	"\x05Range\x12\x19.pallasdb.v1.RangeRequest\x1a\x1a.pallasdb.v1.RangeResponse0\x012M\n" +
+	"\x05Range\x12\x19.pallasdb.v1.RangeRequest\x1a\x1a.pallasdb.v1.RangeResponse0\x012\xeb\x01\n" +
 	"\x0eClusterService\x12;\n" +
-	"\x04Join\x12\x18.pallasdb.v1.JoinRequest\x1a\x19.pallasdb.v1.JoinResponseB,Z*github.com/teddymalhan/pallasdb/pb/v1;pbv1b\x06proto3"
+	"\x04Join\x12\x18.pallasdb.v1.JoinRequest\x1a\x19.pallasdb.v1.JoinResponse\x12P\n" +
+	"\vListMembers\x12\x1f.pallasdb.v1.ListMembersRequest\x1a .pallasdb.v1.ListMembersResponse\x12J\n" +
+	"\tGetLeader\x12\x1d.pallasdb.v1.GetLeaderRequest\x1a\x1e.pallasdb.v1.GetLeaderResponseB,Z*github.com/teddymalhan/pallasdb/pb/v1;pbv1b\x06proto3"
 
 var (
 	file_pallasdb_v1_kv_proto_rawDescOnce sync.Once
@@ -612,38 +951,50 @@ func file_pallasdb_v1_kv_proto_rawDescGZIP() []byte {
 	return file_pallasdb_v1_kv_proto_rawDescData
 }
 
-var file_pallasdb_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pallasdb_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_pallasdb_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_pallasdb_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_pallasdb_v1_kv_proto_goTypes = []any{
-	(PutMode)(0),           // 0: pallasdb.v1.PutMode
-	(*GetRequest)(nil),     // 1: pallasdb.v1.GetRequest
-	(*GetResponse)(nil),    // 2: pallasdb.v1.GetResponse
-	(*PutRequest)(nil),     // 3: pallasdb.v1.PutRequest
-	(*PutResponse)(nil),    // 4: pallasdb.v1.PutResponse
-	(*DeleteRequest)(nil),  // 5: pallasdb.v1.DeleteRequest
-	(*DeleteResponse)(nil), // 6: pallasdb.v1.DeleteResponse
-	(*RangeRequest)(nil),   // 7: pallasdb.v1.RangeRequest
-	(*RangeResponse)(nil),  // 8: pallasdb.v1.RangeResponse
-	(*JoinRequest)(nil),    // 9: pallasdb.v1.JoinRequest
-	(*JoinResponse)(nil),   // 10: pallasdb.v1.JoinResponse
+	(PutMode)(0),                // 0: pallasdb.v1.PutMode
+	(ClusterMemberStatus)(0),    // 1: pallasdb.v1.ClusterMemberStatus
+	(*GetRequest)(nil),          // 2: pallasdb.v1.GetRequest
+	(*GetResponse)(nil),         // 3: pallasdb.v1.GetResponse
+	(*PutRequest)(nil),          // 4: pallasdb.v1.PutRequest
+	(*PutResponse)(nil),         // 5: pallasdb.v1.PutResponse
+	(*DeleteRequest)(nil),       // 6: pallasdb.v1.DeleteRequest
+	(*DeleteResponse)(nil),      // 7: pallasdb.v1.DeleteResponse
+	(*RangeRequest)(nil),        // 8: pallasdb.v1.RangeRequest
+	(*RangeResponse)(nil),       // 9: pallasdb.v1.RangeResponse
+	(*JoinRequest)(nil),         // 10: pallasdb.v1.JoinRequest
+	(*JoinResponse)(nil),        // 11: pallasdb.v1.JoinResponse
+	(*ListMembersRequest)(nil),  // 12: pallasdb.v1.ListMembersRequest
+	(*ListMembersResponse)(nil), // 13: pallasdb.v1.ListMembersResponse
+	(*ClusterMember)(nil),       // 14: pallasdb.v1.ClusterMember
+	(*GetLeaderRequest)(nil),    // 15: pallasdb.v1.GetLeaderRequest
+	(*GetLeaderResponse)(nil),   // 16: pallasdb.v1.GetLeaderResponse
 }
 var file_pallasdb_v1_kv_proto_depIdxs = []int32{
 	0,  // 0: pallasdb.v1.PutRequest.mode:type_name -> pallasdb.v1.PutMode
-	1,  // 1: pallasdb.v1.KVService.Get:input_type -> pallasdb.v1.GetRequest
-	3,  // 2: pallasdb.v1.KVService.Put:input_type -> pallasdb.v1.PutRequest
-	5,  // 3: pallasdb.v1.KVService.Delete:input_type -> pallasdb.v1.DeleteRequest
-	7,  // 4: pallasdb.v1.KVService.Range:input_type -> pallasdb.v1.RangeRequest
-	9,  // 5: pallasdb.v1.ClusterService.Join:input_type -> pallasdb.v1.JoinRequest
-	2,  // 6: pallasdb.v1.KVService.Get:output_type -> pallasdb.v1.GetResponse
-	4,  // 7: pallasdb.v1.KVService.Put:output_type -> pallasdb.v1.PutResponse
-	6,  // 8: pallasdb.v1.KVService.Delete:output_type -> pallasdb.v1.DeleteResponse
-	8,  // 9: pallasdb.v1.KVService.Range:output_type -> pallasdb.v1.RangeResponse
-	10, // 10: pallasdb.v1.ClusterService.Join:output_type -> pallasdb.v1.JoinResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	14, // 1: pallasdb.v1.ListMembersResponse.members:type_name -> pallasdb.v1.ClusterMember
+	1,  // 2: pallasdb.v1.ClusterMember.status:type_name -> pallasdb.v1.ClusterMemberStatus
+	2,  // 3: pallasdb.v1.KVService.Get:input_type -> pallasdb.v1.GetRequest
+	4,  // 4: pallasdb.v1.KVService.Put:input_type -> pallasdb.v1.PutRequest
+	6,  // 5: pallasdb.v1.KVService.Delete:input_type -> pallasdb.v1.DeleteRequest
+	8,  // 6: pallasdb.v1.KVService.Range:input_type -> pallasdb.v1.RangeRequest
+	10, // 7: pallasdb.v1.ClusterService.Join:input_type -> pallasdb.v1.JoinRequest
+	12, // 8: pallasdb.v1.ClusterService.ListMembers:input_type -> pallasdb.v1.ListMembersRequest
+	15, // 9: pallasdb.v1.ClusterService.GetLeader:input_type -> pallasdb.v1.GetLeaderRequest
+	3,  // 10: pallasdb.v1.KVService.Get:output_type -> pallasdb.v1.GetResponse
+	5,  // 11: pallasdb.v1.KVService.Put:output_type -> pallasdb.v1.PutResponse
+	7,  // 12: pallasdb.v1.KVService.Delete:output_type -> pallasdb.v1.DeleteResponse
+	9,  // 13: pallasdb.v1.KVService.Range:output_type -> pallasdb.v1.RangeResponse
+	11, // 14: pallasdb.v1.ClusterService.Join:output_type -> pallasdb.v1.JoinResponse
+	13, // 15: pallasdb.v1.ClusterService.ListMembers:output_type -> pallasdb.v1.ListMembersResponse
+	16, // 16: pallasdb.v1.ClusterService.GetLeader:output_type -> pallasdb.v1.GetLeaderResponse
+	10, // [10:17] is the sub-list for method output_type
+	3,  // [3:10] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_pallasdb_v1_kv_proto_init() }
@@ -656,8 +1007,8 @@ func file_pallasdb_v1_kv_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pallasdb_v1_kv_proto_rawDesc), len(file_pallasdb_v1_kv_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   10,
+			NumEnums:      2,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -102,6 +102,13 @@ func requireNonEmptyFlag(name, value string) error {
 	return nil
 }
 
+func requirePositiveInt(name string, n int) error {
+	if n <= 0 {
+		return fmt.Errorf("%s must be positive", name)
+	}
+	return nil
+}
+
 func joinErrors(errs ...error) error {
 	return errors.Join(errs...)
 }

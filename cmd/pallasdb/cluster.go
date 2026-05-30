@@ -26,6 +26,12 @@ type clusterStartOptions struct {
 	nodeID       string
 	joinAddr     string
 	applyTimeout time.Duration
+
+	serfEnabled       bool
+	serfAddr          string
+	serfAdvertiseAddr string
+	serfJoinAddrs     []string
+	serfEventBuffer   int
 }
 
 func newClusterCommand(root *rootOptions, config *configOptions) *cobra.Command {
@@ -60,11 +66,18 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 
 			nodeCfg := cluster.Config{
 				NodeID:    opts.nodeID,
+				GRPCAddr:  opts.grpcAddr,
 				RaftAddr:  opts.raftAddr,
 				RaftDir:   opts.raftDir,
-				Bootstrap: opts.joinAddr == "",
+				Bootstrap: shouldBootstrapCluster(opts),
 				JoinAddr:  opts.joinAddr,
 				Timeout:   opts.applyTimeout,
+
+				SerfEnabled:       opts.serfEnabled,
+				SerfAddr:          opts.serfAddr,
+				SerfAdvertiseAddr: opts.serfAdvertiseAddr,
+				SerfJoinAddrs:     opts.serfJoinAddrs,
+				SerfEventBuffer:   opts.serfEventBuffer,
 			}
 
 			node, err := cluster.Open(store, nodeCfg)
@@ -83,8 +96,7 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 			}
 
 			srv := grpcapi.NewClusterGRPCServer(
-				node.FSM(),
-				node.Raft(),
+				node,
 				opts.applyTimeout,
 				grpc.ChainUnaryInterceptor(grpcapi.LoggingUnaryInterceptor(logger)),
 			)
@@ -95,6 +107,8 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 				"node_id", opts.nodeID,
 				"data_dir", opts.dataDir,
 				"raft_dir", opts.raftDir,
+				"serf_enabled", opts.serfEnabled,
+				"serf_addr", opts.serfAddr,
 			)
 
 			runErr := grpcapi.ServeWithGracefulStopTimeout(ctx, lis, srv, root.shutdownTimeout)
@@ -116,6 +130,11 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 	cmd.Flags().StringVar(&opts.nodeID, "node-id", "", "unique node ID within the cluster")
 	cmd.Flags().StringVar(&opts.joinAddr, "join", "", "gRPC address of an existing node to join; empty to bootstrap")
 	cmd.Flags().DurationVar(&opts.applyTimeout, "apply-timeout", 10*time.Second, "Raft apply/barrier timeout")
+	cmd.Flags().BoolVar(&opts.serfEnabled, "serf-enabled", true, "enable Serf gossip discovery")
+	cmd.Flags().StringVar(&opts.serfAddr, "serf-addr", ":7946", "Serf gossip bind address")
+	cmd.Flags().StringVar(&opts.serfAdvertiseAddr, "serf-advertise-addr", "", "Serf advertise address")
+	cmd.Flags().StringSliceVar(&opts.serfJoinAddrs, "serf-join", nil, "Serf addresses of existing nodes")
+	cmd.Flags().IntVar(&opts.serfEventBuffer, "serf-event-buffer", 64, "Serf event channel buffer size")
 	config.bindFlag(cmd.Flags(), "grpc-addr", "cluster.grpc_addr")
 	config.bindFlag(cmd.Flags(), "data-dir", "cluster.data_dir")
 	config.bindFlag(cmd.Flags(), "raft-addr", "cluster.raft_addr")
@@ -123,6 +142,11 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 	config.bindFlag(cmd.Flags(), "node-id", "cluster.node_id")
 	config.bindFlag(cmd.Flags(), "join", "cluster.join")
 	config.bindFlag(cmd.Flags(), "apply-timeout", "cluster.apply_timeout")
+	config.bindFlag(cmd.Flags(), "serf-enabled", "cluster.serf.enabled")
+	config.bindFlag(cmd.Flags(), "serf-addr", "cluster.serf.addr")
+	config.bindFlag(cmd.Flags(), "serf-advertise-addr", "cluster.serf.advertise_addr")
+	config.bindFlag(cmd.Flags(), "serf-join", "cluster.serf.join")
+	config.bindFlag(cmd.Flags(), "serf-event-buffer", "cluster.serf.event_buffer")
 	config.registerApply(func(v *viper.Viper) {
 		opts.grpcAddr = v.GetString("cluster.grpc_addr")
 		opts.dataDir = v.GetString("cluster.data_dir")
@@ -131,8 +155,20 @@ func newClusterStartCommand(root *rootOptions, config *configOptions) *cobra.Com
 		opts.nodeID = v.GetString("cluster.node_id")
 		opts.joinAddr = v.GetString("cluster.join")
 		opts.applyTimeout = v.GetDuration("cluster.apply_timeout")
+		opts.serfEnabled = v.GetBool("cluster.serf.enabled")
+		opts.serfAddr = v.GetString("cluster.serf.addr")
+		opts.serfAdvertiseAddr = v.GetString("cluster.serf.advertise_addr")
+		opts.serfJoinAddrs = v.GetStringSlice("cluster.serf.join")
+		opts.serfEventBuffer = v.GetInt("cluster.serf.event_buffer")
 	})
 	return cmd
+}
+
+func shouldBootstrapCluster(opts *clusterStartOptions) bool {
+	if !opts.serfEnabled {
+		return opts.joinAddr == ""
+	}
+	return opts.joinAddr == "" && len(opts.serfJoinAddrs) == 0
 }
 
 func validateClusterStartOptions(root *rootOptions, opts *clusterStartOptions) error {
@@ -140,6 +176,7 @@ func validateClusterStartOptions(root *rootOptions, opts *clusterStartOptions) e
 		requireNonEmptyFlag("node-id", opts.nodeID),
 		requirePositiveDuration("--apply-timeout", opts.applyTimeout),
 		requirePositiveDuration("--shutdown-timeout", root.shutdownTimeout),
+		requirePositiveInt("--serf-event-buffer", opts.serfEventBuffer),
 	)
 }
 

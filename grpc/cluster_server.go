@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/teddymalhan/pallasdb/cluster"
+	"github.com/teddymalhan/pallasdb/cluster/discovery"
 	pbv1 "github.com/teddymalhan/pallasdb/pb/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -24,10 +25,10 @@ type ClusterKVServer struct {
 	pbv1.UnimplementedKVServiceServer
 }
 
-func NewClusterGRPCServer(fsm *cluster.FSM, r *raft.Raft, applyTimeout time.Duration, opts ...grpc.ServerOption) *grpc.Server {
+func NewClusterGRPCServer(node *cluster.Node, applyTimeout time.Duration, opts ...grpc.ServerOption) *grpc.Server {
 	srv := grpc.NewServer(opts...)
-	pbv1.RegisterKVServiceServer(srv, &ClusterKVServer{fsm: fsm, raft: r, timeout: applyTimeout})
-	pbv1.RegisterClusterServiceServer(srv, &ClusterManagementServer{raft: r, timeout: applyTimeout})
+	pbv1.RegisterKVServiceServer(srv, &ClusterKVServer{fsm: node.FSM(), raft: node.Raft(), timeout: applyTimeout})
+	pbv1.RegisterClusterServiceServer(srv, &ClusterManagementServer{node: node, raft: node.Raft(), timeout: applyTimeout})
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(srv, healthSrv)
@@ -36,6 +37,7 @@ func NewClusterGRPCServer(fsm *cluster.FSM, r *raft.Raft, applyTimeout time.Dura
 
 // ClusterManagementServer serves Raft membership operations over gRPC.
 type ClusterManagementServer struct {
+	node    *cluster.Node
 	raft    *raft.Raft
 	timeout time.Duration
 	pbv1.UnimplementedClusterServiceServer
@@ -57,6 +59,81 @@ func (s *ClusterManagementServer) Join(ctx context.Context, req *pbv1.JoinReques
 		return nil, status.Errorf(codes.Internal, "add voter: %v", err)
 	}
 	return &pbv1.JoinResponse{}, nil
+}
+
+func (s *ClusterManagementServer) ListMembers(ctx context.Context, _ *pbv1.ListMembersRequest) (*pbv1.ListMembersResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+
+	leaderAddr, leaderID := s.raft.LeaderWithID()
+	raftMembers, err := s.raftMembers()
+	if err != nil {
+		return nil, err
+	}
+
+	membersByID := make(map[string]*pbv1.ClusterMember, len(raftMembers))
+	for _, server := range raftMembers {
+		member := &pbv1.ClusterMember{
+			NodeId:    string(server.ID),
+			RaftAddr:  string(server.Address),
+			RaftVoter: server.Suffrage == raft.Voter,
+			Leader:    server.ID == leaderID,
+		}
+		membersByID[member.NodeId] = member
+	}
+
+	for _, discovered := range s.node.DiscoveryMembers() {
+		member := membersByID[discovered.NodeID]
+		if member == nil {
+			member = &pbv1.ClusterMember{NodeId: discovered.NodeID}
+			membersByID[discovered.NodeID] = member
+		}
+		member.GrpcAddr = discovered.GRPCAddr
+		member.SerfAddr = discovered.SerfAddr
+		if member.RaftAddr == "" {
+			member.RaftAddr = discovered.RaftAddr
+		}
+		member.Status = clusterMemberStatus(discovered.Status)
+		member.Leader = member.Leader || raft.ServerAddress(discovered.RaftAddr) == leaderAddr
+	}
+
+	members := make([]*pbv1.ClusterMember, 0, len(membersByID))
+	for _, member := range membersByID {
+		members = append(members, member)
+	}
+	return &pbv1.ListMembersResponse{Members: members}, nil
+}
+
+func (s *ClusterManagementServer) GetLeader(ctx context.Context, _ *pbv1.GetLeaderRequest) (*pbv1.GetLeaderResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	addr, id := s.raft.LeaderWithID()
+	return &pbv1.GetLeaderResponse{NodeId: string(id), RaftAddr: string(addr)}, nil
+}
+
+func (s *ClusterManagementServer) raftMembers() ([]raft.Server, error) {
+	future := s.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return nil, status.Errorf(codes.Unavailable, "raft configuration: %v", err)
+	}
+	return future.Configuration().Servers, nil
+}
+
+func clusterMemberStatus(status discovery.MemberStatus) pbv1.ClusterMemberStatus {
+	switch status {
+	case discovery.MemberStatusAlive:
+		return pbv1.ClusterMemberStatus_CLUSTER_MEMBER_STATUS_ALIVE
+	case discovery.MemberStatusLeaving:
+		return pbv1.ClusterMemberStatus_CLUSTER_MEMBER_STATUS_LEAVING
+	case discovery.MemberStatusLeft:
+		return pbv1.ClusterMemberStatus_CLUSTER_MEMBER_STATUS_LEFT
+	case discovery.MemberStatusFailed:
+		return pbv1.ClusterMemberStatus_CLUSTER_MEMBER_STATUS_FAILED
+	default:
+		return pbv1.ClusterMemberStatus_CLUSTER_MEMBER_STATUS_UNSPECIFIED
+	}
 }
 
 func (s *ClusterKVServer) applyCommand(cmd cluster.Command) (*cluster.FSMResult, error) {
