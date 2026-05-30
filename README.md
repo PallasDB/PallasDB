@@ -1,3 +1,8 @@
+PallasDB
+
+Meaning: Pallas Athena represents wisdom, strategy, and technical craft.
+Why it fits: Nice if you want the project to feel engineered, careful, and correctness-oriented.
+
 # gokv
 
 A key-value database in Go using LSM trees, SSTables, write-ahead logging, and concurrent access.
