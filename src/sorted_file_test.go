@@ -10,14 +10,14 @@ import (
 
 func TestSortedFile(t *testing.T) {
 	sf := SortedFile{FileName: ".test_sorted_file"}
-	t.Cleanup(func() { os.Remove(sf.FileName) })
+	t.Cleanup(func() { _ = os.Remove(sf.FileName) })
 
 	keys := [][]byte{[]byte("x"), []byte("x2"), []byte("y")}
 	vals := [][]byte{[]byte("1"), []byte(""), []byte("234")}
 	deleted := []bool{false, true, false}
 	err := sf.CreateFromSorted(&SortedArray{keys, vals, deleted})
 	require.Nil(t, err)
-	t.Cleanup(func() { sf.Close() })
+	t.Cleanup(func() { assert.NoError(t, sf.Close()) })
 	assert.Equal(t, 3, sf.EstimatedSize())
 
 	expected := []byte{

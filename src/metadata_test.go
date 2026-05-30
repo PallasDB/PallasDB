@@ -14,13 +14,13 @@ func testMetadata(t *testing.T, reopen bool) {
 	store.slots[0].FileName = ".test_meta0"
 	store.slots[1].FileName = ".test_meta1"
 	t.Cleanup(func() {
-		os.Remove(store.slots[0].FileName)
-		os.Remove(store.slots[1].FileName)
+		_ = os.Remove(store.slots[0].FileName)
+		_ = os.Remove(store.slots[1].FileName)
 	})
 
 	err := store.Open()
 	require.Nil(t, err)
-	defer store.Close()
+	defer func() { assert.NoError(t, store.Close()) }()
 
 	for i := uint64(1); i < 10; i++ {
 		if reopen {
@@ -50,13 +50,13 @@ func testMetadataRecovery(t *testing.T, flag int) {
 	store.slots[0].FileName = ".test_meta0"
 	store.slots[1].FileName = ".test_meta1"
 	t.Cleanup(func() {
-		os.Remove(store.slots[0].FileName)
-		os.Remove(store.slots[1].FileName)
+		_ = os.Remove(store.slots[0].FileName)
+		_ = os.Remove(store.slots[1].FileName)
 	})
 
 	err := store.Open()
 	require.Nil(t, err)
-	defer store.Close()
+	defer func() { assert.NoError(t, store.Close()) }()
 
 	err = store.Set(KVMetaData{Version: 123})
 	require.Nil(t, err)

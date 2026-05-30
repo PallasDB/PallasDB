@@ -73,7 +73,7 @@ func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error) {
 
 	for _, idx := range schema.Indices[indexNo] {
 		row[idx] = Cell{Type: schema.Cols[idx].Type}
-		if !(len(key) > 0 && key[0] == byte(row[idx].Type)) {
+		if len(key) == 0 || key[0] != byte(row[idx].Type) {
 			return errors.New("bad key")
 		}
 		key = key[1:]
@@ -81,7 +81,7 @@ func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error) {
 			return err
 		}
 	}
-	if !(len(key) == 1 && key[0] == 0x00) {
+	if len(key) != 1 || key[0] != 0x00 {
 		return errors.New("bad key")
 	}
 	return nil

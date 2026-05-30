@@ -87,7 +87,7 @@ func (p *Parser) tryKeyword(kws ...string) bool {
 	save := p.pos
 	for _, kw := range kws {
 		p.skipSpaces()
-		if !(p.pos+len(kw) <= len(p.buf) && strings.EqualFold(p.buf[p.pos:p.pos+len(kw)], kw)) {
+		if p.pos+len(kw) > len(p.buf) || !strings.EqualFold(p.buf[p.pos:p.pos+len(kw)], kw) {
 			p.pos = save
 			return false
 		}
@@ -102,7 +102,7 @@ func (p *Parser) tryKeyword(kws ...string) bool {
 
 func (p *Parser) tryPunctuation(tok string) bool {
 	p.skipSpaces()
-	if !(p.pos+len(tok) <= len(p.buf) && p.buf[p.pos:p.pos+len(tok)] == tok) {
+	if p.pos+len(tok) > len(p.buf) || p.buf[p.pos:p.pos+len(tok)] != tok {
 		return false
 	}
 	p.pos += len(tok)
@@ -112,7 +112,7 @@ func (p *Parser) tryPunctuation(tok string) bool {
 func (p *Parser) tryName() (string, bool) {
 	p.skipSpaces()
 	start, cur := p.pos, p.pos
-	if !(cur < len(p.buf) && isNameStart(p.buf[cur])) {
+	if cur >= len(p.buf) || !isNameStart(p.buf[cur]) {
 		return "", false
 	}
 	cur++
@@ -143,7 +143,8 @@ func (p *Parser) parseString(out *Cell) error {
 	cur := p.pos + 1
 	for cur < len(p.buf) {
 		ch := p.buf[cur]
-		if ch == '\\' {
+		switch ch {
+		case '\\':
 			cur++
 			if cur < len(p.buf) && (p.buf[cur] == '"' || p.buf[cur] == '\'') {
 				out.Str = append(out.Str, p.buf[cur])
@@ -151,11 +152,11 @@ func (p *Parser) parseString(out *Cell) error {
 			} else {
 				return errors.New("bad escape")
 			}
-		} else if ch == quote {
+		case quote:
 			out.Type = TypeStr
 			p.pos = cur + 1
 			return nil
-		} else {
+		default:
 			out.Str = append(out.Str, p.buf[cur])
 			cur++
 		}

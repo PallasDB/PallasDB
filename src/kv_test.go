@@ -15,7 +15,7 @@ func TestKVBasic(t *testing.T) {
 	kv := KV{Options: KVOptions{Dirpath: t.TempDir(), LogShreshold: 1}}
 	err := kv.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { kv.Close() })
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
 
 	updated, err := kv.Set([]byte("k1"), []byte("v1"))
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestKVBasic(t *testing.T) {
 	assert.True(t, updated)
 
 	// reopen
-	kv.Close()
+	require.NoError(t, kv.Close())
 	err = kv.Open()
 	require.Nil(t, err)
 
@@ -87,7 +87,7 @@ func TestKVBasic(t *testing.T) {
 	assert.False(t, ok)
 
 	// reopen
-	kv.Close()
+	require.NoError(t, kv.Close())
 	err = kv.Open()
 	require.Nil(t, err)
 
@@ -149,7 +149,7 @@ func TestKVUpdateMode(t *testing.T) {
 	kv.Options.Dirpath = t.TempDir()
 	err := kv.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { kv.Close() })
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
 
 	updated, err := kv.SetEx([]byte("k1"), []byte("v1"), ModeUpdate)
 	require.NoError(t, err)
@@ -185,11 +185,11 @@ func TestKVRecovery(t *testing.T) {
 	kv.Options.Dirpath = t.TempDir()
 
 	prepare := func() {
-		os.RemoveAll(kv.Options.Dirpath)
+		require.NoError(t, os.RemoveAll(kv.Options.Dirpath))
 
 		err := kv.Open()
 		require.NoError(t, err)
-		defer kv.Close()
+		defer func() { assert.NoError(t, kv.Close()) }()
 
 		updated, err := kv.Set([]byte("k1"), []byte("v1"))
 		require.NoError(t, err)
@@ -210,8 +210,8 @@ func TestKVRecovery(t *testing.T) {
 	// simulate truncated log
 	fp, _ := os.OpenFile(kv.log.FileName, os.O_RDWR, 0o644)
 	st, _ := fp.Stat()
-	fp.Truncate(st.Size() - 1)
-	fp.Close()
+	require.NoError(t, fp.Truncate(st.Size()-1))
+	assert.NoError(t, fp.Close())
 	// reopen
 	err := kv.Open()
 	assert.Nil(t, err)
@@ -226,14 +226,15 @@ func TestKVRecovery(t *testing.T) {
 	_, ok, err = kv.Get([]byte("k3")) // bad
 	require.NoError(t, err)
 	assert.False(t, ok)
-	kv.Close()
+	assert.NoError(t, kv.Close())
 
 	prepare()
 	// simulate bad checksum
 	fp, _ = os.OpenFile(kv.log.FileName, os.O_RDWR, 0o644)
 	st, _ = fp.Stat()
-	fp.WriteAt([]byte{0}, st.Size()-1)
-	fp.Close()
+	_, err = fp.WriteAt([]byte{0}, st.Size()-1)
+	require.NoError(t, err)
+	assert.NoError(t, fp.Close())
 	// reopen
 	err = kv.Open()
 	assert.Nil(t, err)
@@ -248,7 +249,7 @@ func TestKVRecovery(t *testing.T) {
 	_, ok, err = kv.Get([]byte("k3")) // bad
 	require.NoError(t, err)
 	assert.False(t, ok)
-	kv.Close()
+	assert.NoError(t, kv.Close())
 }
 
 func TestEntryEncode(t *testing.T) {
@@ -278,7 +279,7 @@ func TestKVSeek(t *testing.T) {
 	kv.Options.Dirpath = t.TempDir()
 	err := kv.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { kv.Close() })
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
 
 	keys := []string{"c", "e", "g"}
 	vals := []string{"3", "5", "7"}
@@ -332,7 +333,7 @@ func TestKVSnapshot(t *testing.T) {
 	kv.Options.Dirpath = t.TempDir()
 	err := kv.Open()
 	require.Nil(t, err)
-	t.Cleanup(func() { kv.Close() })
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
 
 	updated, err := kv.Set([]byte("k1"), []byte("v1"))
 	require.NoError(t, err)
@@ -402,7 +403,7 @@ func TestTXConflict(t *testing.T) {
 	kv.Options.Dirpath = t.TempDir()
 	err := kv.Open()
 	require.Nil(t, err)
-	t.Cleanup(func() { kv.Close() })
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
 
 	updated, err := kv.Set([]byte("k1"), []byte("v1"))
 	require.NoError(t, err)
@@ -441,7 +442,7 @@ func TestKVAutoCompact(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, updated)
 	}
-	kv.Close()
+	assert.NoError(t, kv.Close())
 
 	time.Sleep(time.Millisecond * 10)
 	assert.True(t, kv.version > 10)

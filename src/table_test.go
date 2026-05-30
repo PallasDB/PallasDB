@@ -13,7 +13,7 @@ func TestTableByPKey(t *testing.T) {
 	db.KV.Options.Dirpath = t.TempDir()
 	err := db.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
 	schema := &Schema{
 		Table: "link",
@@ -81,7 +81,7 @@ func TestSQLByPKey(t *testing.T) {
 	db.KV.Options.Dirpath = dirpath
 	err := db.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
 	s := "create table link (time int64, src string, dst string, primary key (src, dst));"
 	_, err = db.ExecStmt(parseStmt(t, s))
@@ -166,7 +166,7 @@ func TestIterByPKey(t *testing.T) {
 	db.KV.Options.Dirpath = t.TempDir()
 	err := db.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
 	schema := &Schema{
 		Table: "t",
@@ -302,7 +302,7 @@ func TestTableExpr(t *testing.T) {
 	db.KV.Options.Dirpath = t.TempDir()
 	err := db.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
 	s := `
 		create table t (
@@ -354,7 +354,7 @@ func TestTableIndices(t *testing.T) {
 	db.KV.Options.Dirpath = t.TempDir()
 	err := db.Open()
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
 	s := `
 		create table t (

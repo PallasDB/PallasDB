@@ -27,7 +27,7 @@ func syncDir(file string) error {
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(dirfd)
+	defer func() { _ = syscall.Close(dirfd) }()
 	return syscall.Fsync(dirfd)
 }
 
