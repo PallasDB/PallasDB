@@ -444,4 +444,354 @@ func TestTableIndices(t *testing.T) {
 	require.Equal(t, []Row{makeRow(2, 0)}, r.Values)
 }
 
+func TestExecCreateTableErrors(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "create table t (a int64, primary key (a));"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	require.NoError(t, err)
+
+	// Duplicate table name
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestExecCreateTableColumnNotFound(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	// primary key column doesn't exist
+	s := "create table t (a int64, primary key (z));"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+
+	// index column doesn't exist
+	s = "create table t2 (a int64, primary key (a), index (z));"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestGetSchemaNotFound(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	_, err = db.GetSchema("nonexistent")
+	assert.Error(t, err)
+}
+
+func TestExecInsertSchemaMismatch(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "create table t (a int64, b string, primary key (a));"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	require.NoError(t, err)
+
+	// Wrong number of values
+	s = "insert into t values (1);"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+
+	// Wrong type (string where int64 expected)
+	s = "insert into t values ('hello', 'world');"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestExecInsertUnknownTable(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "insert into nonexistent values (1);"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestExecSelectUnknownTable(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "select a from nonexistent where a = 1;"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestExecUpdateUnknownTable(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "update nonexistent set a = 1 where a = 0;"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestExecDeleteUnknownTable(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "delete from nonexistent where a = 1;"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestFillNonPKeyErrors(t *testing.T) {
+	schema := &Schema{
+		Table:   "t",
+		Cols:    []Column{{"k", TypeI64}, {"v", TypeI64}},
+		Indices: [][]int{{0}},
+	}
+	row := schema.NewRow()
+	row[0] = Cell{Type: TypeI64, I64: 1}
+	row[1] = Cell{Type: TypeI64, I64: 2}
+
+	// Cannot update primary key column
+	err := fillNonPKey(schema, []NamedCell{{"k", Cell{Type: TypeI64, I64: 99}}}, row)
+	assert.Error(t, err)
+
+	// Unknown column name
+	err = fillNonPKey(schema, []NamedCell{{"z", Cell{Type: TypeI64, I64: 99}}}, row)
+	assert.Error(t, err)
+
+	// Wrong type for column
+	err = fillNonPKey(schema, []NamedCell{{"v", Cell{Type: TypeStr, Str: []byte("bad")}}}, row)
+	assert.Error(t, err)
+}
+
+func TestAddPKeyToIndex(t *testing.T) {
+	// pkey columns not in index should be appended
+	pkey := []int{0, 1}
+	index := []int{2, 3}
+	result := addPKeyToIndex(index, pkey)
+	assert.Equal(t, []int{2, 3, 0, 1}, result)
+
+	// pkey columns already in index should not be duplicated
+	index = []int{0, 2}
+	result = addPKeyToIndex(index, pkey)
+	assert.Equal(t, []int{0, 2, 1}, result)
+}
+
+func TestMatchAllEq(t *testing.T) {
+	// simple equality
+	cond := &ExprBinOp{op: OP_EQ, left: "k", right: &Cell{Type: TypeI64, I64: 5}}
+	named, ok := matchAllEq(cond, nil)
+	assert.True(t, ok)
+	assert.Equal(t, []NamedCell{{"k", Cell{Type: TypeI64, I64: 5}}}, named)
+
+	// AND of equalities
+	cond2 := &ExprBinOp{op: OP_AND, left: cond, right: &ExprBinOp{
+		op: OP_EQ, left: "v", right: &Cell{Type: TypeStr, Str: []byte("x")},
+	}}
+	named, ok = matchAllEq(cond2, nil)
+	assert.True(t, ok)
+	assert.Len(t, named, 2)
+
+	// non-equality op - fails
+	cond3 := &ExprBinOp{op: OP_LT, left: "k", right: &Cell{Type: TypeI64, I64: 5}}
+	_, ok = matchAllEq(cond3, nil)
+	assert.False(t, ok)
+
+	// reversed (value on left, name on right)
+	cond4 := &ExprBinOp{op: OP_EQ, left: &Cell{Type: TypeI64, I64: 5}, right: "k"}
+	named, ok = matchAllEq(cond4, nil)
+	assert.True(t, ok)
+	assert.Equal(t, []NamedCell{{"k", Cell{Type: TypeI64, I64: 5}}}, named)
+}
+
+func TestAsNameListAndAsCellList(t *testing.T) {
+	// string name
+	names, ok := asNameList("col")
+	assert.True(t, ok)
+	assert.Equal(t, []string{"col"}, names)
+
+	// tuple of names
+	names, ok = asNameList(&ExprTuple{kids: []any{"a", "b"}})
+	assert.True(t, ok)
+	assert.Equal(t, []string{"a", "b"}, names)
+
+	// tuple with non-string - fails
+	_, ok = asNameList(&ExprTuple{kids: []any{"a", &Cell{Type: TypeI64, I64: 1}}})
+	assert.False(t, ok)
+
+	// non-string, non-tuple
+	_, ok = asNameList(&Cell{Type: TypeI64, I64: 1})
+	assert.False(t, ok)
+
+	// single cell
+	cells, ok := asCellList(&Cell{Type: TypeI64, I64: 5})
+	assert.True(t, ok)
+	assert.Equal(t, []Cell{{Type: TypeI64, I64: 5}}, cells)
+
+	// tuple of cells
+	cells, ok = asCellList(&ExprTuple{kids: []any{
+		&Cell{Type: TypeI64, I64: 1},
+		&Cell{Type: TypeStr, Str: []byte("x")},
+	}})
+	assert.True(t, ok)
+	assert.Len(t, cells, 2)
+
+	// tuple with non-cell - fails
+	_, ok = asCellList(&ExprTuple{kids: []any{&Cell{Type: TypeI64, I64: 1}, "col"}})
+	assert.False(t, ok)
+
+	// non-cell, non-tuple
+	_, ok = asCellList("col")
+	assert.False(t, ok)
+}
+
+func TestMatchCmp(t *testing.T) {
+	// simple cmp
+	cell := &Cell{Type: TypeI64, I64: 5}
+	cond := &ExprBinOp{op: OP_GE, left: "k", right: cell}
+	op, names, cells, ok := matchCmp(cond)
+	assert.True(t, ok)
+	assert.Equal(t, OP_GE, op)
+	assert.Equal(t, []string{"k"}, names)
+	assert.Equal(t, []Cell{*cell}, cells)
+
+	// reversed operands - op should be flipped
+	cond = &ExprBinOp{op: OP_GE, left: cell, right: "k"}
+	op, names, cells, ok = matchCmp(cond)
+	assert.True(t, ok)
+	assert.Equal(t, OP_LE, op) // GE flipped
+	assert.Equal(t, []string{"k"}, names)
+	assert.Equal(t, []Cell{*cell}, cells)
+
+	// non-comparison op - fails
+	cond = &ExprBinOp{op: OP_ADD, left: "k", right: cell}
+	_, _, _, ok = matchCmp(cond)
+	assert.False(t, ok)
+
+	// not a binop - fails
+	_, _, _, ok = matchCmp("col")
+	assert.False(t, ok)
+}
+
+func TestUpsertAndUpdateModes(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	schema := &Schema{
+		Table: "t",
+		Cols: []Column{
+			{Name: "k", Type: TypeI64},
+			{Name: "v", Type: TypeI64},
+		},
+		Indices: [][]int{{0}},
+	}
+
+	row := Row{
+		Cell{Type: TypeI64, I64: 1},
+		Cell{Type: TypeI64, I64: 10},
+	}
+
+	// Insert new row
+	updated, err := db.Insert(schema, row)
+	require.NoError(t, err)
+	assert.True(t, updated)
+
+	// Insert same row again - should NOT update (ModeInsert)
+	updated, err = db.Insert(schema, row)
+	require.NoError(t, err)
+	assert.False(t, updated)
+
+	// Upsert same row - no change, same value
+	updated, err = db.Upsert(schema, row)
+	require.NoError(t, err)
+	assert.False(t, updated)
+
+	// Upsert with different value - should update
+	row[1] = Cell{Type: TypeI64, I64: 20}
+	updated, err = db.Upsert(schema, row)
+	require.NoError(t, err)
+	assert.True(t, updated)
+
+	// Update non-existing row - should not update
+	row[0] = Cell{Type: TypeI64, I64: 999}
+	updated, err = db.Update(schema, row)
+	require.NoError(t, err)
+	assert.False(t, updated)
+
+	// Delete non-existing row
+	deleted, err := db.Delete(schema, row)
+	require.NoError(t, err)
+	assert.False(t, deleted)
+}
+
+func TestSQLUnimplementedWhere(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	s := "create table t (a int64, b int64, primary key (a));"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	require.NoError(t, err)
+
+	// WHERE clause that doesn't match any index pattern (expression on both sides)
+	s = "select a from t where a + 1 = b;"
+	_, err = db.ExecStmt(parseStmt(t, s))
+	assert.Error(t, err)
+}
+
+func TestDBNewTXNestedNewTX(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	tx := db.NewTX()
+	inner := tx.NewTX()
+	// inner tx operations should be isolated
+	schema := &Schema{
+		Table:   "t",
+		Cols:    []Column{{"k", TypeI64}, {"v", TypeI64}},
+		Indices: [][]int{{0}},
+	}
+	row := Row{
+		Cell{Type: TypeI64, I64: 1},
+		Cell{Type: TypeI64, I64: 100},
+	}
+	_, err = inner.Insert(schema, row)
+	require.NoError(t, err)
+
+	// Abort inner transaction - changes should not propagate
+	inner.Abort()
+
+	// Outer tx should not see inner's changes
+	ok, err := tx.Select(schema, row)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	tx.Abort()
+}
+
 // QzBQWVJJOUhU https://trialofcode.org/

@@ -6,9 +6,12 @@ import (
 	"strings"
 )
 
+const maxExprDepth = 1000
+
 type Parser struct {
-	buf string
-	pos int
+	buf   string
+	pos   int
+	depth int
 }
 
 func NewParser(s string) Parser {
@@ -515,13 +518,18 @@ func (p *Parser) parseAnd() (any, error) {
 
 func (p *Parser) parseNot() (expr any, err error) {
 	if p.tryKeyword("NOT") {
+		p.depth++
+		if p.depth > maxExprDepth {
+			p.depth--
+			return nil, errors.New("expression too deeply nested")
+		}
+		defer func() { p.depth-- }()
 		if expr, err = p.parseNot(); err != nil {
 			return nil, err
 		}
 		return &ExprUnOp{op: OP_NOT, kid: expr}, nil
-	} else {
-		return p.parseCmp()
 	}
+	return p.parseCmp()
 }
 
 func (p *Parser) parseCmp() (any, error) {
@@ -542,13 +550,18 @@ func (p *Parser) parseMul() (any, error) {
 
 func (p *Parser) parseNeg() (expr any, err error) {
 	if p.tryPunctuation("-") {
+		p.depth++
+		if p.depth > maxExprDepth {
+			p.depth--
+			return nil, errors.New("expression too deeply nested")
+		}
+		defer func() { p.depth-- }()
 		if expr, err = p.parseNeg(); err != nil {
 			return nil, err
 		}
 		return &ExprUnOp{op: OP_NEG, kid: expr}, nil
-	} else {
-		return p.parseAtom()
 	}
+	return p.parseAtom()
 }
 
 // QzBQWVJJOUhU https://trialofcode.org/

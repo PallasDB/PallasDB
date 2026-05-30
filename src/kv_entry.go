@@ -34,6 +34,8 @@ func (ent *Entry) Encode() []byte {
 
 var ErrBadSum = errors.New("bad checksum")
 
+const maxEntrySize = 64 << 20 // 64 MB per entry
+
 func (ent *Entry) Decode(r io.Reader) error {
 	var header [4 + 4 + 4 + 1]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
@@ -41,6 +43,9 @@ func (ent *Entry) Decode(r io.Reader) error {
 	}
 	klen := int(binary.LittleEndian.Uint32(header[4:8]))
 	vlen := int(binary.LittleEndian.Uint32(header[8:12]))
+	if klen+vlen > maxEntrySize {
+		return errors.New("entry too large")
+	}
 	op := EntryOp(header[4+4+4])
 
 	data := make([]byte, klen+vlen)

@@ -2,7 +2,6 @@ package db0904
 
 import (
 	"errors"
-	"slices"
 )
 
 type Schema struct {
@@ -49,8 +48,12 @@ func EncodeKeyPrefix(schema *Schema, indexNo int, prefix []Cell, positive bool) 
 
 func (row Row) EncodeVal(schema *Schema) (val []byte) {
 	check(len(row) == len(schema.Cols))
+	pkeySet := make(map[int]struct{}, len(schema.Indices[0]))
+	for _, idx := range schema.Indices[0] {
+		pkeySet[idx] = struct{}{}
+	}
 	for idx, value := range row {
-		if !slices.Contains(schema.Indices[0], idx) {
+		if _, inPKey := pkeySet[idx]; !inPKey {
 			check(value.Type == schema.Cols[idx].Type)
 			val = row[idx].EncodeVal(val)
 		}
@@ -89,9 +92,12 @@ func (row Row) DecodeKey(schema *Schema, indexNo int, key []byte) (err error) {
 
 func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
 	check(len(row) == len(schema.Cols))
-
+	pkeySet := make(map[int]struct{}, len(schema.Indices[0]))
+	for _, idx := range schema.Indices[0] {
+		pkeySet[idx] = struct{}{}
+	}
 	for idx, col := range schema.Cols {
-		if slices.Contains(schema.Indices[0], idx) {
+		if _, inPKey := pkeySet[idx]; inPKey {
 			continue
 		}
 		row[idx] = Cell{Type: col.Type}
@@ -99,7 +105,6 @@ func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
 			return err
 		}
 	}
-
 	if len(val) != 0 {
 		return errors.New("trailing garbage")
 	}

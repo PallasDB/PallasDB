@@ -479,4 +479,144 @@ func TestKVClosing(t *testing.T) {
 	assert.True(t, duration >= 20)
 }
 
+func TestKVRange(t *testing.T) {
+	kv := KV{}
+	kv.Options.Dirpath = t.TempDir()
+	err := kv.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+
+	keys := []string{"b", "d", "f", "h"}
+	for _, k := range keys {
+		_, err = kv.Set([]byte(k), []byte(k+"v"))
+		require.NoError(t, err)
+	}
+
+	tx := kv.NewTX()
+	defer tx.Abort()
+
+	// Forward range [b, f]
+	iter, err := tx.Range([]byte("b"), []byte("f"), false)
+	require.NoError(t, err)
+	var got []string
+	for iter.Valid() {
+		got = append(got, string(iter.Key()))
+		require.NoError(t, iter.Next())
+	}
+	assert.Equal(t, []string{"b", "d", "f"}, got)
+
+	// Descending range [f, b]
+	iter, err = tx.Range([]byte("f"), []byte("b"), true)
+	require.NoError(t, err)
+	got = nil
+	for iter.Valid() {
+		got = append(got, string(iter.Key()))
+		require.NoError(t, iter.Next())
+	}
+	assert.Equal(t, []string{"f", "d", "b"}, got)
+
+	// Empty range (start > stop in forward direction)
+	iter, err = tx.Range([]byte("z"), []byte("a"), false)
+	require.NoError(t, err)
+	assert.False(t, iter.Valid())
+}
+
+func TestNoDeletedIter(t *testing.T) {
+	arr := &SortedArray{}
+	arr.Push([]byte("a"), []byte("1"), false)
+	arr.Push([]byte("b"), nil, true) // deleted
+	arr.Push([]byte("c"), []byte("3"), false)
+	arr.Push([]byte("d"), nil, true) // deleted
+	arr.Push([]byte("e"), []byte("5"), false)
+
+	raw, err := arr.Iter()
+	require.NoError(t, err)
+
+	iter, err := filterDeleted(raw)
+	require.NoError(t, err)
+
+	// Forward traversal should skip deleted
+	var keys []string
+	for iter.Valid() {
+		keys = append(keys, string(iter.Key()))
+		require.NoError(t, iter.Next())
+	}
+	assert.Equal(t, []string{"a", "c", "e"}, keys)
+
+	// Backward traversal should also skip deleted
+	keys = nil
+	for {
+		require.NoError(t, iter.Prev())
+		if !iter.Valid() {
+			break
+		}
+		keys = append(keys, string(iter.Key()))
+	}
+	assert.Equal(t, []string{"e", "c", "a"}, keys)
+}
+
+func TestInnerTXApplyAndAbort(t *testing.T) {
+	kv := KV{}
+	kv.Options.Dirpath = t.TempDir()
+	err := kv.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+
+	outer := kv.NewTX()
+
+	// Set a key in outer
+	_, err = outer.Set([]byte("k1"), []byte("v1"))
+	require.NoError(t, err)
+
+	// Create inner TX, make changes, then apply
+	inner := outer.NewTX()
+	_, err = inner.Set([]byte("k2"), []byte("v2"))
+	require.NoError(t, err)
+	err = inner.Commit()
+	require.NoError(t, err)
+
+	// outer should see k2
+	val, ok, err := outer.Get([]byte("k2"))
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, []byte("v2"), val)
+
+	// inner abort is a no-op
+	inner2 := outer.NewTX()
+	_, err = inner2.Set([]byte("k3"), []byte("v3"))
+	require.NoError(t, err)
+	inner2.Abort() // abort - changes should not appear in outer
+
+	_, ok, err = outer.Get([]byte("k3"))
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	outer.Abort()
+}
+
+func TestKVCompactMultipleLevels(t *testing.T) {
+	kv := KV{Options: KVOptions{Dirpath: t.TempDir(), LogShreshold: 1, GrowthFactor: 1.5}}
+	err := kv.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, kv.Close()) })
+
+	// Create multiple SSTable levels via compaction
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("key%d", i)
+		_, err = kv.Set([]byte(key), []byte(key))
+		require.NoError(t, err)
+		err = kv.Compact()
+		require.NoError(t, err)
+	}
+
+	// Verify all keys are accessible after compaction
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("key%d", i)
+		val, ok, err := kv.Get([]byte(key))
+		require.NoError(t, err)
+		assert.True(t, ok, "key %s should exist", key)
+		assert.Equal(t, []byte(key), val)
+	}
+}
+
 // QzBQWVJJOUhU https://trialofcode.org/

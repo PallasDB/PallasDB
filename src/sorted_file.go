@@ -29,7 +29,15 @@ type SortedFile struct {
 }
 
 func (file *SortedFile) Close() error {
-	return file.fp.Close()
+	if file.fp == nil {
+		return nil
+	}
+	err := file.fp.Close()
+	file.fp = nil
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (file *SortedFile) Open() (err error) {
@@ -43,12 +51,18 @@ func (file *SortedFile) Open() (err error) {
 	return err
 }
 
+const maxNKeys = 1 << 26 // ~67 million keys
+
 func (file *SortedFile) openExisting() error {
 	var buf [8]byte
 	if _, err := file.fp.ReadAt(buf[:8], 0); err != nil {
 		return err
 	}
-	file.nkeys = int(binary.LittleEndian.Uint64(buf[:8]))
+	nkeys := int(binary.LittleEndian.Uint64(buf[:8]))
+	if nkeys < 0 || nkeys > maxNKeys {
+		return errors.New("corrupted file: nkeys out of range")
+	}
+	file.nkeys = nkeys
 	return nil
 }
 
@@ -170,7 +184,10 @@ func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, er
 	}
 	klen := binary.LittleEndian.Uint32(buf[0:4])
 	vlen := binary.LittleEndian.Uint32(buf[4:8])
-	data := make([]byte, klen+vlen)
+	if int64(klen)+int64(vlen) > maxEntrySize {
+		return nil, nil, false, errors.New("entry too large")
+	}
+	data := make([]byte, int(klen)+int(vlen))
 	if _, err = file.fp.ReadAt(data, offset+4+4+1); err != nil {
 		return nil, nil, false, err
 	}

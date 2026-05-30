@@ -66,6 +66,7 @@ func encodeStrKey(toAppend []byte, input []byte) []byte {
 }
 
 func decodeStrKey(data []byte) (out []byte, rest []byte, err error) {
+	out = []byte{}
 	escape := false
 	for i, ch := range data {
 		if escape {

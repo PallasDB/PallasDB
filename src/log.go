@@ -25,7 +25,15 @@ func (log *Log) Open() (err error) {
 }
 
 func (log *Log) Close() error {
-	return log.fp.Close()
+	if log.fp == nil {
+		return nil
+	}
+	err := log.fp.Close()
+	log.fp = nil
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (log *Log) Write(ent *Entry) error {

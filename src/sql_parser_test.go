@@ -191,4 +191,171 @@ func TestParseExpr(t *testing.T) {
 	testParseExpr(t, s, expr)
 }
 
+func TestParseValueErrors(t *testing.T) {
+	// empty input
+	p := NewParser("")
+	err := p.parseValue(&Cell{})
+	assert.Error(t, err)
+
+	// unexpected character
+	p = NewParser("@")
+	err = p.parseValue(&Cell{})
+	assert.Error(t, err)
+
+	// unterminated string
+	p = NewParser(`"hello`)
+	err = p.parseValue(&Cell{})
+	assert.Error(t, err)
+
+	// bad escape in string
+	p = NewParser(`"hello\x"`)
+	err = p.parseValue(&Cell{})
+	assert.Error(t, err)
+
+	// sign only (no digits)
+	p = NewParser("-")
+	err = p.parseValue(&Cell{})
+	assert.Error(t, err)
+
+	// plus sign only
+	p = NewParser("+")
+	err = p.parseValue(&Cell{})
+	assert.Error(t, err)
+}
+
+func TestParseStmtErrors(t *testing.T) {
+	bad := []string{
+		// unknown statement
+		"FOOBAR;",
+		// SELECT: missing column list
+		"select from t where a=1;",
+		// SELECT: missing FROM
+		"select a,b;",
+		// SELECT: missing table name
+		"select a from where a=1;",
+		// INSERT: missing VALUES
+		"insert into t (1, 2);",
+		// INSERT: missing semicolon
+		"insert into t values (1, 2)",
+		// CREATE TABLE: missing semicolon
+		"create table t (a int64, primary key (a))",
+		// CREATE TABLE: unknown column type
+		"create table t (a float64, primary key (a));",
+		// UPDATE: missing SET
+		"update t where a=1;",
+		// DELETE: missing WHERE
+		"delete from t;",
+	}
+	for _, s := range bad {
+		t.Run(s, func(t *testing.T) {
+			p := NewParser(s)
+			_, err := p.parseStmt()
+			assert.Error(t, err, "expected parse error for: %s", s)
+		})
+	}
+}
+
+func TestParsePunctuation(t *testing.T) {
+	p := NewParser("  (  )  ")
+	assert.True(t, p.tryPunctuation("("))
+	assert.True(t, p.tryPunctuation(")"))
+	assert.True(t, p.isEnd())
+
+	// punctuation not present
+	p = NewParser("a")
+	assert.False(t, p.tryPunctuation("("))
+}
+
+func TestParseKeywordEdgeCases(t *testing.T) {
+	// keyword at end of buffer with no trailing separator
+	p := NewParser("FROM")
+	assert.True(t, p.tryKeyword("FROM"))
+	assert.True(t, p.isEnd())
+
+	// keyword followed by non-separator (should not match)
+	p = NewParser("FROMtable")
+	assert.False(t, p.tryKeyword("FROM"))
+
+	// multiple keywords - first matches, second doesn't
+	p = NewParser("SELECT INSERT")
+	assert.False(t, p.tryKeyword("SELECT", "FROM"))
+	assert.True(t, p.tryKeyword("SELECT", "INSERT"))
+	assert.True(t, p.isEnd())
+}
+
+func TestParseTuple(t *testing.T) {
+	// single element tuple - returns the expression itself
+	p := NewParser("(a)")
+	expr, err := p.parseTuple()
+	require.NoError(t, err)
+	assert.Equal(t, "a", expr)
+
+	// multi-element tuple
+	p = NewParser("(a, b, c)")
+	expr, err = p.parseTuple()
+	require.NoError(t, err)
+	assert.Equal(t, &ExprTuple{kids: []any{"a", "b", "c"}}, expr)
+
+	// empty tuple - error
+	p = NewParser("()")
+	_, err = p.parseTuple()
+	assert.Error(t, err)
+}
+
+func TestParseSelectWithIndex(t *testing.T) {
+	// SELECT with index-based range query
+	s := "select time from link where (src, dst) >= ('bob', 'alice');"
+	p := NewParser(s)
+	stmt, err := p.parseStmt()
+	require.NoError(t, err)
+	require.True(t, p.isEnd())
+	sel, ok := stmt.(*StmtSelect)
+	require.True(t, ok)
+	assert.Equal(t, "link", sel.table)
+}
+
+func TestParseCreateTableWithIndex(t *testing.T) {
+	s := "create table t (a int64, b string, primary key (a), index (b));"
+	p := NewParser(s)
+	stmt, err := p.parseStmt()
+	require.NoError(t, err)
+	ct, ok := stmt.(*StmtCreatTable)
+	require.True(t, ok)
+	assert.Equal(t, "t", ct.table)
+	assert.Equal(t, [][]string{{"b"}}, ct.indices)
+	assert.Equal(t, []string{"a"}, ct.pkey)
+}
+
+func TestParseStringEscapes(t *testing.T) {
+	// escaped single quote inside double-quoted string
+	p := NewParser(`"it\'s"`)
+	c := Cell{}
+	err := p.parseString(&c)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("it's"), c.Str)
+
+	// escaped double quote inside single-quoted string
+	p = NewParser(`'say \"hi\"'`)
+	c = Cell{}
+	err = p.parseString(&c)
+	require.NoError(t, err)
+	assert.Equal(t, []byte(`say "hi"`), c.Str)
+}
+
+func TestParseIntEdgeCases(t *testing.T) {
+	// positive number with explicit +
+	p := NewParser("+42")
+	c := Cell{}
+	err := p.parseInt(&c)
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), c.I64)
+
+	// zero
+	p = NewParser("0")
+	c = Cell{}
+	err = p.parseInt(&c)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), c.I64)
+}
+
 // QzBQWVJJOUhU https://trialofcode.org/

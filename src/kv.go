@@ -3,6 +3,7 @@ package db0904
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -83,6 +84,9 @@ func (kv *KV) untrackTXSync(tx *KVTX) {
 	defer kv.mu.Unlock()
 
 	idx := slices.Index(kv.ongoing, tx)
+	if idx < 0 {
+		return
+	}
 	kv.ongoing = slices.Delete(kv.ongoing, idx, idx+1)
 	if len(kv.ongoing) > 0 {
 		oldest := kv.ongoing[0].snapshot
@@ -135,10 +139,15 @@ func (kv *KV) applyTX(tx *KVTX) error {
 }
 
 func (kv *KV) checkTXConflict(tx *KVTX) bool {
+	kv.mu.Lock()
+	history := make([]UpdatedKey, len(kv.history))
+	copy(history, kv.history)
+	kv.mu.Unlock()
+
 	iter, err := tx.updates.Iter()
 	for ; err == nil && iter.Valid(); err = iter.Next() {
 		key := iter.Key()
-		for _, other := range kv.history {
+		for _, other := range history {
 			if other.snapshot > tx.snapshot && bytes.Equal(other.key, key) {
 				return true
 			}
@@ -235,7 +244,7 @@ func (kv *KV) startCompactThread() {
 			select {
 			case <-kv.updated:
 				if err := kv.Compact(); err != nil {
-					_ = err
+					_ = fmt.Errorf("compact: %w", err)
 				}
 			case <-kv.closing:
 				return
@@ -532,7 +541,7 @@ func (kv *KV) Compact() error {
 
 func (kv *KV) shouldMerge(idx int) bool {
 	cur, next := kv.main[idx].EstimatedSize(), kv.main[idx+1].EstimatedSize()
-	return float32(cur)*kv.Options.GrowthFactor >= float32(cur+next)
+	return float32(cur)*kv.Options.GrowthFactor >= float32(next)
 }
 
 func (kv *KV) compactLog() error {
@@ -563,6 +572,7 @@ func (kv *KV) compactLog() error {
 
 	kv.mu.Lock()
 	kv.main = slices.Insert(kv.main, 0, file)
+	kv.MultiClosers = append(kv.MultiClosers, &kv.main[0])
 	kv.mem.Clear()
 	kv.mu.Unlock()
 
@@ -592,13 +602,18 @@ func (kv *KV) compactSSTable(level int) error {
 		return err
 	}
 
-	old1, old2 := kv.main[level].FileName, kv.main[level+1].FileName
+	old1, old2 := &kv.main[level], &kv.main[level+1]
+	old1Name, old2Name := old1.FileName, old2.FileName
+	_ = old1.Close()
+	_ = old2.Close()
+
 	kv.mu.Lock()
 	kv.main = slices.Replace(kv.main, level, level+2, file)
+	kv.MultiClosers = append(kv.MultiClosers, &kv.main[level])
 	kv.mu.Unlock()
 
-	_ = os.Remove(old1)
-	_ = os.Remove(old2)
+	_ = os.Remove(old1Name)
+	_ = os.Remove(old2Name)
 	return nil
 }
 
