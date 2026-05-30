@@ -21,7 +21,7 @@ The implementation lives in the root package folder `gokv/`.
 
 ## Install
 
-Requires Go 1.24 or later.
+Requires Go 1.25 or later.
 
 ```sh
 git clone https://github.com/teddymalhan/gokv.git
