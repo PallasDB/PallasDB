@@ -235,3 +235,103 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "pallasdb/v1/kv.proto",
 }
+
+const (
+	ClusterService_Join_FullMethodName = "/pallasdb.v1.ClusterService/Join"
+)
+
+// ClusterServiceClient is the client API for ClusterService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ClusterServiceClient interface {
+	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
+}
+
+type clusterServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewClusterServiceClient(cc grpc.ClientConnInterface) ClusterServiceClient {
+	return &clusterServiceClient{cc}
+}
+
+func (c *clusterServiceClient) Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JoinResponse)
+	err := c.cc.Invoke(ctx, ClusterService_Join_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ClusterServiceServer is the server API for ClusterService service.
+// All implementations should embed UnimplementedClusterServiceServer
+// for forward compatibility.
+type ClusterServiceServer interface {
+	Join(context.Context, *JoinRequest) (*JoinResponse, error)
+}
+
+// UnimplementedClusterServiceServer should be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedClusterServiceServer struct{}
+
+func (UnimplementedClusterServiceServer) Join(context.Context, *JoinRequest) (*JoinResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Join not implemented")
+}
+func (UnimplementedClusterServiceServer) testEmbeddedByValue() {}
+
+// UnsafeClusterServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ClusterServiceServer will
+// result in compilation errors.
+type UnsafeClusterServiceServer interface {
+	mustEmbedUnimplementedClusterServiceServer()
+}
+
+func RegisterClusterServiceServer(s grpc.ServiceRegistrar, srv ClusterServiceServer) {
+	// If the following call panics, it indicates UnimplementedClusterServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ClusterService_ServiceDesc, srv)
+}
+
+func _ClusterService_Join_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).Join(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_Join_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).Join(ctx, req.(*JoinRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ClusterService_ServiceDesc is the grpc.ServiceDesc for ClusterService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ClusterService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "pallasdb.v1.ClusterService",
+	HandlerType: (*ClusterServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Join",
+			Handler:    _ClusterService_Join_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "pallasdb/v1/kv.proto",
+}

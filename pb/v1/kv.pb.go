@@ -465,6 +465,94 @@ func (x *RangeResponse) GetValue() []byte {
 	return nil
 }
 
+type JoinRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	RaftAddr      string                 `protobuf:"bytes,2,opt,name=raft_addr,json=raftAddr,proto3" json:"raft_addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinRequest) Reset() {
+	*x = JoinRequest{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinRequest) ProtoMessage() {}
+
+func (x *JoinRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinRequest.ProtoReflect.Descriptor instead.
+func (*JoinRequest) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *JoinRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *JoinRequest) GetRaftAddr() string {
+	if x != nil {
+		return x.RaftAddr
+	}
+	return ""
+}
+
+type JoinResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinResponse) Reset() {
+	*x = JoinResponse{}
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinResponse) ProtoMessage() {}
+
+func (x *JoinResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pallasdb_v1_kv_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinResponse.ProtoReflect.Descriptor instead.
+func (*JoinResponse) Descriptor() ([]byte, []int) {
+	return file_pallasdb_v1_kv_proto_rawDescGZIP(), []int{9}
+}
+
 var File_pallasdb_v1_kv_proto protoreflect.FileDescriptor
 
 const file_pallasdb_v1_kv_proto_rawDesc = "" +
@@ -494,7 +582,11 @@ const file_pallasdb_v1_kv_proto_rawDesc = "" +
 	"descending\"7\n" +
 	"\rRangeResponse\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value*b\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"C\n" +
+	"\vJoinRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
+	"\traft_addr\x18\x02 \x01(\tR\braftAddr\"\x0e\n" +
+	"\fJoinResponse*b\n" +
 	"\aPutMode\x12\x18\n" +
 	"\x14PUT_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPUT_MODE_UPSERT\x10\x01\x12\x13\n" +
@@ -504,7 +596,9 @@ const file_pallasdb_v1_kv_proto_rawDesc = "" +
 	"\x03Get\x12\x17.pallasdb.v1.GetRequest\x1a\x18.pallasdb.v1.GetResponse\x128\n" +
 	"\x03Put\x12\x17.pallasdb.v1.PutRequest\x1a\x18.pallasdb.v1.PutResponse\x12A\n" +
 	"\x06Delete\x12\x1a.pallasdb.v1.DeleteRequest\x1a\x1b.pallasdb.v1.DeleteResponse\x12@\n" +
-	"\x05Range\x12\x19.pallasdb.v1.RangeRequest\x1a\x1a.pallasdb.v1.RangeResponse0\x01B,Z*github.com/teddymalhan/pallasdb/pb/v1;pbv1b\x06proto3"
+	"\x05Range\x12\x19.pallasdb.v1.RangeRequest\x1a\x1a.pallasdb.v1.RangeResponse0\x012M\n" +
+	"\x0eClusterService\x12;\n" +
+	"\x04Join\x12\x18.pallasdb.v1.JoinRequest\x1a\x19.pallasdb.v1.JoinResponseB,Z*github.com/teddymalhan/pallasdb/pb/v1;pbv1b\x06proto3"
 
 var (
 	file_pallasdb_v1_kv_proto_rawDescOnce sync.Once
@@ -519,7 +613,7 @@ func file_pallasdb_v1_kv_proto_rawDescGZIP() []byte {
 }
 
 var file_pallasdb_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pallasdb_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_pallasdb_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_pallasdb_v1_kv_proto_goTypes = []any{
 	(PutMode)(0),           // 0: pallasdb.v1.PutMode
 	(*GetRequest)(nil),     // 1: pallasdb.v1.GetRequest
@@ -530,22 +624,26 @@ var file_pallasdb_v1_kv_proto_goTypes = []any{
 	(*DeleteResponse)(nil), // 6: pallasdb.v1.DeleteResponse
 	(*RangeRequest)(nil),   // 7: pallasdb.v1.RangeRequest
 	(*RangeResponse)(nil),  // 8: pallasdb.v1.RangeResponse
+	(*JoinRequest)(nil),    // 9: pallasdb.v1.JoinRequest
+	(*JoinResponse)(nil),   // 10: pallasdb.v1.JoinResponse
 }
 var file_pallasdb_v1_kv_proto_depIdxs = []int32{
-	0, // 0: pallasdb.v1.PutRequest.mode:type_name -> pallasdb.v1.PutMode
-	1, // 1: pallasdb.v1.KVService.Get:input_type -> pallasdb.v1.GetRequest
-	3, // 2: pallasdb.v1.KVService.Put:input_type -> pallasdb.v1.PutRequest
-	5, // 3: pallasdb.v1.KVService.Delete:input_type -> pallasdb.v1.DeleteRequest
-	7, // 4: pallasdb.v1.KVService.Range:input_type -> pallasdb.v1.RangeRequest
-	2, // 5: pallasdb.v1.KVService.Get:output_type -> pallasdb.v1.GetResponse
-	4, // 6: pallasdb.v1.KVService.Put:output_type -> pallasdb.v1.PutResponse
-	6, // 7: pallasdb.v1.KVService.Delete:output_type -> pallasdb.v1.DeleteResponse
-	8, // 8: pallasdb.v1.KVService.Range:output_type -> pallasdb.v1.RangeResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: pallasdb.v1.PutRequest.mode:type_name -> pallasdb.v1.PutMode
+	1,  // 1: pallasdb.v1.KVService.Get:input_type -> pallasdb.v1.GetRequest
+	3,  // 2: pallasdb.v1.KVService.Put:input_type -> pallasdb.v1.PutRequest
+	5,  // 3: pallasdb.v1.KVService.Delete:input_type -> pallasdb.v1.DeleteRequest
+	7,  // 4: pallasdb.v1.KVService.Range:input_type -> pallasdb.v1.RangeRequest
+	9,  // 5: pallasdb.v1.ClusterService.Join:input_type -> pallasdb.v1.JoinRequest
+	2,  // 6: pallasdb.v1.KVService.Get:output_type -> pallasdb.v1.GetResponse
+	4,  // 7: pallasdb.v1.KVService.Put:output_type -> pallasdb.v1.PutResponse
+	6,  // 8: pallasdb.v1.KVService.Delete:output_type -> pallasdb.v1.DeleteResponse
+	8,  // 9: pallasdb.v1.KVService.Range:output_type -> pallasdb.v1.RangeResponse
+	10, // 10: pallasdb.v1.ClusterService.Join:output_type -> pallasdb.v1.JoinResponse
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_pallasdb_v1_kv_proto_init() }
@@ -559,9 +657,9 @@ func file_pallasdb_v1_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pallasdb_v1_kv_proto_rawDesc), len(file_pallasdb_v1_kv_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_pallasdb_v1_kv_proto_goTypes,
 		DependencyIndexes: file_pallasdb_v1_kv_proto_depIdxs,

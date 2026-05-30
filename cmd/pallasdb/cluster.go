@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,7 +24,6 @@ type clusterStartOptions struct {
 	raftDir      string
 	nodeID       string
 	joinAddr     string
-	httpAddr     string
 	applyTimeout time.Duration
 }
 
@@ -77,20 +75,10 @@ func newClusterStartCommand(root *rootOptions) *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			httpSrv := newClusterHTTPServer(opts.httpAddr, node)
-			httpErrCh := make(chan error, 1)
-			go func() {
-				if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					httpErrCh <- err
-					return
-				}
-				httpErrCh <- nil
-			}()
-
 			listenConfig := net.ListenConfig{}
 			lis, err := listenConfig.Listen(ctx, "tcp", opts.grpcAddr)
 			if err != nil {
-				return shutdownClusterNode(node, httpSrv, root.shutdownTimeout, fmt.Errorf("listen on %s: %w", opts.grpcAddr, err))
+				return shutdownClusterNode(node, fmt.Errorf("listen on %s: %w", opts.grpcAddr, err))
 			}
 
 			srv := grpcapi.NewClusterGRPCServer(
@@ -103,44 +91,16 @@ func newClusterStartCommand(root *rootOptions) *cobra.Command {
 			logger.Info("starting cluster node",
 				"grpc_addr", opts.grpcAddr,
 				"raft_addr", opts.raftAddr,
-				"http_addr", opts.httpAddr,
 				"node_id", opts.nodeID,
 				"data_dir", opts.dataDir,
 				"raft_dir", opts.raftDir,
 			)
 
-			serveErrCh := make(chan error, 1)
-			go func() {
-				if err := srv.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-					serveErrCh <- err
-					return
-				}
-				serveErrCh <- nil
-			}()
-
-			var runErr error
-			serveDone := false
-			select {
-			case err := <-serveErrCh:
-				serveDone = true
-				if err != nil {
-					runErr = fmt.Errorf("serve grpc: %w", err)
-				}
-			case err := <-httpErrCh:
-				if err != nil {
-					runErr = fmt.Errorf("serve http: %w", err)
-				}
-			case <-ctx.Done():
+			runErr := grpcapi.ServeWithGracefulStopTimeout(ctx, lis, srv, root.shutdownTimeout)
+			if errors.Is(runErr, context.Canceled) {
+				runErr = nil
 			}
-
-			if !serveDone {
-				grpcapi.GracefulStop(srv, root.shutdownTimeout)
-				if err := <-serveErrCh; err != nil && runErr == nil {
-					runErr = fmt.Errorf("serve grpc: %w", err)
-				}
-			}
-
-			if err := shutdownClusterNode(node, httpSrv, root.shutdownTimeout, runErr); err != nil {
+			if err := shutdownClusterNode(node, runErr); err != nil {
 				return err
 			}
 			logger.Info("cluster node stopped")
@@ -153,8 +113,7 @@ func newClusterStartCommand(root *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.raftAddr, "raft-addr", ":7001", "Raft TCP transport address")
 	cmd.Flags().StringVar(&opts.raftDir, "raft-dir", "raft", "Raft state directory")
 	cmd.Flags().StringVar(&opts.nodeID, "node-id", "", "unique node ID within the cluster")
-	cmd.Flags().StringVar(&opts.joinAddr, "join", "", "HTTP management address of an existing node to join; empty to bootstrap")
-	cmd.Flags().StringVar(&opts.httpAddr, "http-addr", ":8001", "HTTP management listen address")
+	cmd.Flags().StringVar(&opts.joinAddr, "join", "", "gRPC address of an existing node to join; empty to bootstrap")
 	cmd.Flags().DurationVar(&opts.applyTimeout, "apply-timeout", 10*time.Second, "Raft apply/barrier timeout")
 	mustMarkFlagRequired(cmd, "node-id")
 	return cmd
@@ -168,25 +127,11 @@ func validateClusterStartOptions(root *rootOptions, opts *clusterStartOptions) e
 	)
 }
 
-func newClusterHTTPServer(addr string, node *cluster.Node) *http.Server {
-	mux := http.NewServeMux()
-	mux.Handle("/cluster/join", cluster.JoinHandler(node))
-	return &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-}
-
-func shutdownClusterNode(node *cluster.Node, httpSrv *http.Server, timeout time.Duration, runErr error) error {
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	httpErr := httpSrv.Shutdown(shutdownCtx)
+func shutdownClusterNode(node *cluster.Node, runErr error) error {
 	nodeErr := node.Shutdown()
 	fsmErr := node.FSM().Close()
 
-	return joinErrors(runErr, httpErr, nodeErr, fsmErr)
+	return joinErrors(runErr, nodeErr, fsmErr)
 }
 
 func mustMarkFlagRequired(cmd *cobra.Command, name string) {

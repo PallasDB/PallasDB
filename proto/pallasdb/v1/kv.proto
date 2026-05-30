@@ -11,6 +11,10 @@ service KVService {
   rpc Range(RangeRequest) returns (stream RangeResponse);
 }
 
+service ClusterService {
+  rpc Join(JoinRequest) returns (JoinResponse);
+}
+
 enum PutMode {
   PUT_MODE_UNSPECIFIED = 0;
   PUT_MODE_UPSERT = 1;
@@ -54,3 +58,10 @@ message RangeResponse {
   bytes key = 1;
   bytes value = 2;
 }
+
+message JoinRequest {
+  string node_id = 1;
+  string raft_addr = 2;
+}
+
+message JoinResponse {}

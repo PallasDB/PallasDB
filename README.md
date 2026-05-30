@@ -8,7 +8,7 @@ The name references Pallas Athena: wisdom, strategy, and technical craft.
 
 This project builds a small database engine from first principles: raw byte encoding, crash-safe persistence, sorted string tables, multi-level merging, a SQL parser, expression evaluation, and a replicated Raft-backed server mode.
 
-The storage engine lives in `db/`. Cluster/Raft glue lives in `cluster/`. The public gRPC transport lives in `grpc/`. Generated protobuf code lives in `pb/`.
+The storage engine lives in `db/`. Cluster/Raft glue lives in `cluster/`. Public KV APIs and cluster-management APIs live in the `grpc/` protobuf/gRPC transport. Generated protobuf code lives in `pb/`.
 
 ## Features
 
@@ -74,22 +74,20 @@ go run ./cmd/pallasdb cluster start \
   --node-id node-1 \
   --grpc-addr :50051 \
   --raft-addr :7001 \
-  --http-addr :8001 \
   --data-dir ./data/node-1 \
   --raft-dir ./raft/node-1
 ```
 
-Join another node through the first node's HTTP management endpoint:
+Join another node through the first node's gRPC management service:
 
 ```sh
 go run ./cmd/pallasdb cluster start \
   --node-id node-2 \
   --grpc-addr :50052 \
   --raft-addr :7002 \
-  --http-addr :8002 \
   --data-dir ./data/node-2 \
   --raft-dir ./raft/node-2 \
-  --join localhost:8001
+  --join localhost:50051
 ```
 
 ### Shell completions

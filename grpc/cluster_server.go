@@ -27,10 +27,36 @@ type ClusterKVServer struct {
 func NewClusterGRPCServer(fsm *cluster.FSM, r *raft.Raft, applyTimeout time.Duration, opts ...grpc.ServerOption) *grpc.Server {
 	srv := grpc.NewServer(opts...)
 	pbv1.RegisterKVServiceServer(srv, &ClusterKVServer{fsm: fsm, raft: r, timeout: applyTimeout})
+	pbv1.RegisterClusterServiceServer(srv, &ClusterManagementServer{raft: r, timeout: applyTimeout})
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(srv, healthSrv)
 	return srv
+}
+
+// ClusterManagementServer serves Raft membership operations over gRPC.
+type ClusterManagementServer struct {
+	raft    *raft.Raft
+	timeout time.Duration
+	pbv1.UnimplementedClusterServiceServer
+}
+
+func (s *ClusterManagementServer) Join(ctx context.Context, req *pbv1.JoinRequest) (*pbv1.JoinResponse, error) {
+	if req.GetNodeId() == "" || req.GetRaftAddr() == "" {
+		return nil, status.Error(codes.InvalidArgument, "node_id and raft_addr are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if s.raft.State() != raft.Leader {
+		leader, _ := s.raft.LeaderWithID()
+		return nil, status.Errorf(codes.Unavailable, "not leader; try %s", leader)
+	}
+	f := s.raft.AddVoter(raft.ServerID(req.GetNodeId()), raft.ServerAddress(req.GetRaftAddr()), 0, s.timeout)
+	if err := f.Error(); err != nil {
+		return nil, status.Errorf(codes.Internal, "add voter: %v", err)
+	}
+	return &pbv1.JoinResponse{}, nil
 }
 
 func (s *ClusterKVServer) applyCommand(cmd cluster.Command) (*cluster.FSMResult, error) {

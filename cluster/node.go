@@ -1,11 +1,9 @@
 package cluster
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,7 +11,10 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 	"github.com/teddymalhan/pallasdb/db"
+	pbv1 "github.com/teddymalhan/pallasdb/pb/v1"
 	bolt "go.etcd.io/bbolt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Config holds all parameters needed to start a cluster node.
@@ -22,7 +23,7 @@ type Config struct {
 	RaftAddr  string        // TCP address for Raft transport, e.g. ":7001"
 	RaftDir   string        // directory for BoltDB log store and snapshots
 	Bootstrap bool          // true only when starting the very first node of a fresh cluster
-	JoinAddr  string        // HTTP management address of an existing node; empty if bootstrapping
+	JoinAddr  string        // gRPC address of an existing node; empty if bootstrapping
 	Timeout   time.Duration // Raft apply timeout (default 10s)
 }
 
@@ -107,7 +108,7 @@ func Open(kvStore *db.KV, cfg Config) (*Node, error) {
 	}
 
 	if cfg.JoinAddr != "" {
-		if err := sendJoinRequest(cfg.JoinAddr, cfg.NodeID, cfg.RaftAddr); err != nil {
+		if err := sendJoinRequest(cfg.JoinAddr, cfg.NodeID, cfg.RaftAddr, cfg.Timeout); err != nil {
 			_ = node.Shutdown()
 			return nil, fmt.Errorf("join cluster: %w", err)
 		}
@@ -147,20 +148,20 @@ func closeBoltStore(s *raftboltdb.BoltStore) error {
 	return s.Close()
 }
 
-func sendJoinRequest(httpAddr, nodeID, raftAddr string) error {
-	body := JoinRequest{NodeID: nodeID, Addr: raftAddr}
-	data, err := json.Marshal(body)
+func sendJoinRequest(joinAddr, nodeID, raftAddr string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	conn, err := grpc.NewClient(joinAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return err
+		return fmt.Errorf("create join grpc client: %w", err)
 	}
-	url := "http://" + httpAddr + "/cluster/join"
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data)) //nolint:noctx
+	defer func() { _ = conn.Close() }()
+
+	client := pbv1.NewClusterServiceClient(conn)
+	_, err = client.Join(ctx, &pbv1.JoinRequest{NodeId: nodeID, RaftAddr: raftAddr})
 	if err != nil {
-		return fmt.Errorf("post join: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("join returned status %d", resp.StatusCode)
+		return fmt.Errorf("call join grpc: %w", err)
 	}
 	return nil
 }
