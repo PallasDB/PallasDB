@@ -213,6 +213,7 @@ func (kv *KV) Open() (err error) {
 		kv.Options.GrowthFactor = 2.0
 	}
 	kv.closing = make(chan struct{})
+	kv.updated = make(chan struct{}, 1)
 	if err = kv.openAll(); err != nil {
 		_ = kv.Close()
 		return err
@@ -223,9 +224,28 @@ func (kv *KV) Open() (err error) {
 	return nil
 }
 
-func (kv *KV) startCompactThread()
+func (kv *KV) startCompactThread() {
+	kv.threads.Add(1)
+	go func() {
+		defer kv.threads.Done()
+		for {
+			select {
+			case <-kv.updated:
+				if err := kv.Compact(); err != nil {
+					_ = err
+				}
+			case <-kv.closing:
+				return
+			}
+		}
+	}()
+}
 
-func (kv *KV) Close() error
+func (kv *KV) Close() error {
+	close(kv.closing)
+	kv.threads.Wait()
+	return kv.MultiClosers.Close()
+}
 
 func (kv *KV) openAll() error {
 	err := os.Mkdir(kv.Options.Dirpath, 0o755)
