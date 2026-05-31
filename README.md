@@ -1,4 +1,4 @@
-# PallasDB
+<img width="1280" height="320" alt="PallasDB-banner" src="https://github.com/user-attachments/assets/9628a214-8a86-40b2-a0e6-77afd49de060" />
 
 PallasDB is a key-value database in Go using LSM trees, SSTables, write-ahead logging, concurrent access, gRPC, and Raft replication.
 
