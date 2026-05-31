@@ -31,6 +31,7 @@ func newLocalCommand(root *rootOptions, config *configOptions) *cobra.Command {
 		newLocalDeleteCommand(root, opts),
 		newLocalRangeCommand(root, opts),
 		newLocalCompactCommand(root, opts),
+		newLocalBenchmarkCommand(root, opts),
 	)
 	return cmd
 }

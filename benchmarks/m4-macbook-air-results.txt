@@ -1,0 +1,511 @@
+PallasDB local benchmark
+started_at: 2026-05-30T17:49:18.916336-07:00
+command: go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/smoke" --reset --keys 20000 --value-size 128 --batch-size 500 --read-ops 20000 --scan-limit 20000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+parameters:
+  data_dir: /Users/teddymalhan/bench-data/pallasdb-m4/smoke
+  keys: 20000
+  value_size: 128
+  key_size: 16
+  batch_size: 500
+  read_ops: 20000
+  scan_limit: 20000
+  log_threshold: 1000
+  growth_factor: 2.00
+  auto_compact: false
+  compact: true
+  cache_bytes: 0
+  cache_counters: 0
+  reset: true
+
+environment:
+  goos: darwin
+  goarch: arm64
+  go_version: go1.26.3
+  gomaxprocs: 10
+  num_cpu: 10
+
+phases:
+  populate:
+    elapsed: 281.530792ms
+    operations: 20000
+    ns_per_op: 14076.54
+    ops_per_sec: 71040.19
+    logical_bytes: 2880000
+    bytes_per_sec: 10229786.87
+    found: 0
+    missing: 0
+    updated: 20000
+    errors: 0
+    checksum: 0
+    mallocs: 43497
+    total_alloc_bytes: 96168992
+    heap_alloc_delta_bytes: 4223808
+    num_gc: 38
+  compact:
+    elapsed: 135.737959ms
+    operations: 1
+    ns_per_op: 135737959.00
+    ops_per_sec: 7.37
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 81
+    total_alloc_bytes: 110296
+    heap_alloc_delta_bytes: 110296
+    num_gc: 0
+  reopen:
+    elapsed: 180.833µs
+    operations: 1
+    ns_per_op: 180833.00
+    ops_per_sec: 5529.96
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 60
+    total_alloc_bytes: 54568
+    heap_alloc_delta_bytes: 54568
+    num_gc: 0
+  random_read:
+    elapsed: 274.154875ms
+    operations: 20000
+    ns_per_op: 13707.74
+    ops_per_sec: 72951.47
+    logical_bytes: 2880000
+    bytes_per_sec: 10505011.08
+    found: 20000
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 279840000
+    mallocs: 387085
+    total_alloc_bytes: 48699672
+    heap_alloc_delta_bytes: -2971392
+    num_gc: 15
+  iterate_keys:
+    elapsed: 19.393459ms
+    operations: 20000
+    ns_per_op: 969.67
+    ops_per_sec: 1031275.55
+    logical_bytes: 320000
+    bytes_per_sec: 16500408.72
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 15730000
+    mallocs: 20013
+    total_alloc_bytes: 2880880
+    heap_alloc_delta_bytes: -454912
+    num_gc: 1
+  iterate_values:
+    elapsed: 20.111625ms
+    operations: 20000
+    ns_per_op: 1005.58
+    ops_per_sec: 994449.73
+    logical_bytes: 2880000
+    bytes_per_sec: 143200760.75
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 295570000
+    mallocs: 20013
+    total_alloc_bytes: 2880880
+    heap_alloc_delta_bytes: -427168
+    num_gc: 1
+
+data_dir_size_bytes: 3244062
+---
+
+PallasDB local benchmark
+started_at: 2026-05-30T17:49:32.631226-07:00
+command: go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v128" --reset --keys 2000000 --value-size 128 --batch-size 1000 --read-ops 500000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+parameters:
+  data_dir: /Users/teddymalhan/bench-data/pallasdb-m4/v128
+  keys: 2000000
+  value_size: 128
+  key_size: 16
+  batch_size: 1000
+  read_ops: 500000
+  scan_limit: 0
+  log_threshold: 1000
+  growth_factor: 2.00
+  auto_compact: false
+  compact: true
+  cache_bytes: 0
+  cache_counters: 0
+  reset: true
+
+environment:
+  goos: darwin
+  goarch: arm64
+  go_version: go1.26.3
+  gomaxprocs: 10
+  num_cpu: 10
+
+phases:
+  populate:
+    elapsed: 1m40.033148042s
+    operations: 2000000
+    ns_per_op: 50016.57
+    ops_per_sec: 19993.37
+    logical_bytes: 288000000
+    bytes_per_sec: 2879045.65
+    found: 0
+    missing: 0
+    updated: 2000000
+    errors: 0
+    checksum: 0
+    mallocs: 4289292
+    total_alloc_bytes: 544962420376
+    heap_alloc_delta_bytes: 320506816
+    num_gc: 5205
+  compact:
+    elapsed: 12.662603417s
+    operations: 1
+    ns_per_op: 12662603417.00
+    ops_per_sec: 0.08
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 85
+    total_alloc_bytes: 7646616
+    heap_alloc_delta_bytes: 7646616
+    num_gc: 0
+  reopen:
+    elapsed: 889.917µs
+    operations: 1
+    ns_per_op: 889917.00
+    ops_per_sec: 1123.70
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 60
+    total_alloc_bytes: 4805928
+    heap_alloc_delta_bytes: 4805928
+    num_gc: 0
+  random_read:
+    elapsed: 18.805313291s
+    operations: 500000
+    ns_per_op: 37610.63
+    ops_per_sec: 26588.23
+    logical_bytes: 72000000
+    bytes_per_sec: 3828705.16
+    found: 500000
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 6996000000
+    mallocs: 12975491
+    total_alloc_bytes: 1692466616
+    heap_alloc_delta_bytes: -328882368
+    num_gc: 508
+  iterate_keys:
+    elapsed: 1.971692291s
+    operations: 2000000
+    ns_per_op: 985.85
+    ops_per_sec: 1014357.06
+    logical_bytes: 32000000
+    bytes_per_sec: 16229713.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 1591000000
+    mallocs: 2000036
+    total_alloc_bytes: 288003456
+    heap_alloc_delta_bytes: -373936
+    num_gc: 92
+  iterate_values:
+    elapsed: 2.051869708s
+    operations: 2000000
+    ns_per_op: 1025.93
+    ops_per_sec: 974720.76
+    logical_bytes: 288000000
+    bytes_per_sec: 140359789.36
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 29575000000
+    mallocs: 2000027
+    total_alloc_bytes: 288002448
+    heap_alloc_delta_bytes: -143616
+    num_gc: 92
+
+data_dir_size_bytes: 324396366
+---
+
+PallasDB local benchmark
+started_at: 2026-05-30T17:51:53.923935-07:00
+command: go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v1024" --reset --keys 500000 --value-size 1024 --batch-size 1000 --read-ops 300000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+parameters:
+  data_dir: /Users/teddymalhan/bench-data/pallasdb-m4/v1024
+  keys: 500000
+  value_size: 1024
+  key_size: 16
+  batch_size: 1000
+  read_ops: 300000
+  scan_limit: 0
+  log_threshold: 1000
+  growth_factor: 2.00
+  auto_compact: false
+  compact: true
+  cache_bytes: 0
+  cache_counters: 0
+  reset: true
+
+environment:
+  goos: darwin
+  goarch: arm64
+  go_version: go1.26.3
+  gomaxprocs: 10
+  num_cpu: 10
+
+phases:
+  populate:
+    elapsed: 11.530604125s
+    operations: 500000
+    ns_per_op: 23061.21
+    ops_per_sec: 43362.86
+    logical_bytes: 520000000
+    bytes_per_sec: 45097376.89
+    found: 0
+    missing: 0
+    updated: 500000
+    errors: 0
+    checksum: 0
+    mallocs: 1063377
+    total_alloc_bytes: 34254218056
+    heap_alloc_delta_bytes: 72773200
+    num_gc: 1247
+  compact:
+    elapsed: 5.602865s
+    operations: 1
+    ns_per_op: 5602865000.00
+    ops_per_sec: 0.18
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 82
+    total_alloc_bytes: 1920248
+    heap_alloc_delta_bytes: 1920248
+    num_gc: 0
+  reopen:
+    elapsed: 424.542µs
+    operations: 1
+    ns_per_op: 424542.00
+    ops_per_sec: 2355.48
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 60
+    total_alloc_bytes: 1217832
+    heap_alloc_delta_bytes: 1217832
+    num_gc: 0
+  random_read:
+    elapsed: 8.947418917s
+    operations: 300000
+    ns_per_op: 29824.73
+    ops_per_sec: 33529.22
+    logical_bytes: 312000000
+    bytes_per_sec: 34870391.44
+    found: 300000
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 33614400000
+    mallocs: 7186420
+    total_alloc_bytes: 6660732376
+    heap_alloc_delta_bytes: -73372192
+    num_gc: 2368
+  iterate_keys:
+    elapsed: 548.348042ms
+    operations: 500000
+    ns_per_op: 1096.70
+    ops_per_sec: 911829.64
+    logical_bytes: 8000000
+    bytes_per_sec: 14589274.31
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 396250000
+    mallocs: 500053
+    total_alloc_bytes: 576005360
+    heap_alloc_delta_bytes: 194560
+    num_gc: 205
+  iterate_values:
+    elapsed: 682.20925ms
+    operations: 500000
+    ns_per_op: 1364.42
+    ops_per_sec: 732912.96
+    logical_bytes: 520000000
+    bytes_per_sec: 762229477.25
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 56420250000
+    mallocs: 500065
+    total_alloc_bytes: 576006704
+    heap_alloc_delta_bytes: 510656
+    num_gc: 205
+
+data_dir_size_bytes: 529099166
+---
+
+PallasDB local benchmark
+started_at: 2026-05-30T17:52:27.076139-07:00
+command: go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v16384" --reset --keys 50000 --value-size 16384 --batch-size 250 --read-ops 100000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+parameters:
+  data_dir: /Users/teddymalhan/bench-data/pallasdb-m4/v16384
+  keys: 50000
+  value_size: 16384
+  key_size: 16
+  batch_size: 250
+  read_ops: 100000
+  scan_limit: 0
+  log_threshold: 1000
+  growth_factor: 2.00
+  auto_compact: false
+  compact: true
+  cache_bytes: 0
+  cache_counters: 0
+  reset: true
+
+environment:
+  goos: darwin
+  goarch: arm64
+  go_version: go1.26.3
+  gomaxprocs: 10
+  num_cpu: 10
+
+phases:
+  populate:
+    elapsed: 4.071326125s
+    operations: 50000
+    ns_per_op: 81426.52
+    ops_per_sec: 12281.01
+    logical_bytes: 820000000
+    bytes_per_sec: 201408576.67
+    found: 0
+    missing: 0
+    updated: 50000
+    errors: 0
+    checksum: 0
+    mallocs: 118491
+    total_alloc_bytes: 2145798240
+    heap_alloc_delta_bytes: 8534680
+    num_gc: 624
+  compact:
+    elapsed: 3.651025708s
+    operations: 1
+    ns_per_op: 3651025708.00
+    ops_per_sec: 0.27
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 80
+    total_alloc_bytes: 232872
+    heap_alloc_delta_bytes: 232872
+    num_gc: 0
+  reopen:
+    elapsed: 222.292µs
+    operations: 1
+    ns_per_op: 222292.00
+    ops_per_sec: 4498.59
+    logical_bytes: 0
+    bytes_per_sec: 0.00
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 0
+    mallocs: 60
+    total_alloc_bytes: 136568
+    heap_alloc_delta_bytes: 136568
+    num_gc: 0
+  random_read:
+    elapsed: 18.642144167s
+    operations: 100000
+    ns_per_op: 186421.44
+    ops_per_sec: 5364.19
+    logical_bytes: 1640000000
+    bytes_per_sec: 87972713.08
+    found: 100000
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 179400400000
+    mallocs: 2070239
+    total_alloc_bytes: 28968343144
+    heap_alloc_delta_bytes: -7072672
+    num_gc: 9775
+  iterate_keys:
+    elapsed: 155.127709ms
+    operations: 50000
+    ns_per_op: 3102.55
+    ops_per_sec: 322315.08
+    logical_bytes: 800000
+    bytes_per_sec: 5157041.29
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 39400000
+    mallocs: 50027
+    total_alloc_bytes: 921602448
+    heap_alloc_delta_bytes: 1216208
+    num_gc: 311
+  iterate_values:
+    elapsed: 352.98125ms
+    operations: 50000
+    ns_per_op: 7059.62
+    ops_per_sec: 141650.58
+    logical_bytes: 820000000
+    bytes_per_sec: 2323069568.14
+    found: 0
+    missing: 0
+    updated: 0
+    errors: 0
+    checksum: 89739600000
+    mallocs: 50043
+    total_alloc_bytes: 921604240
+    heap_alloc_delta_bytes: -1951072
+    num_gc: 289
+
+data_dir_size_bytes: 820910006
+---
