@@ -1,6 +1,8 @@
 package db
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
 	"testing"
 
@@ -31,7 +33,12 @@ func TestSortedFile(t *testing.T) {
 	}
 	data, err := os.ReadFile(sf.FileName)
 	require.Nil(t, err)
-	assert.Equal(t, expected, data)
+	require.GreaterOrEqual(t, len(data), len(expected)+sortedFileBloomFooterSize)
+	assert.Equal(t, expected, data[:len(expected)])
+	footer := data[len(data)-sortedFileBloomFooterSize:]
+	assert.Equal(t, sortedFileBloomMagic[:], footer[8:])
+	assert.Greater(t, binary.LittleEndian.Uint64(footer[:8]), uint64(0))
+	assert.NotNil(t, sf.bloom)
 
 	i := 0
 	iter, err := sf.Iter()
@@ -162,6 +169,7 @@ func TestSortedFileReopen(t *testing.T) {
 
 	err := sf.CreateFromSorted(arr)
 	require.Nil(t, err)
+	require.NotNil(t, sf.bloom)
 	require.Nil(t, sf.Close())
 
 	// Reopen and verify
@@ -171,11 +179,51 @@ func TestSortedFileReopen(t *testing.T) {
 	defer func() { assert.NoError(t, sf2.Close()) }()
 
 	assert.Equal(t, 2, sf2.EstimatedSize())
+	require.NotNil(t, sf2.bloom)
+	assert.True(t, sf2.bloom.Test([]byte("key1")))
+	assert.True(t, sf2.bloom.Test([]byte("key2")))
+
 	iter, err := sf2.Iter()
 	require.Nil(t, err)
 	assert.True(t, iter.Valid())
 	assert.Equal(t, []byte("key1"), iter.Key())
 	assert.Equal(t, []byte("val1"), iter.Val())
+}
+
+func TestSortedFileBloomSkipsImpossiblePointLookup(t *testing.T) {
+	sf := SortedFile{FileName: ".test_sorted_file_bloom"}
+	t.Cleanup(func() { _ = os.Remove(sf.FileName) })
+
+	arr := &SortedArray{}
+	for i := byte('a'); i <= 'z'; i++ {
+		k := []byte{i}
+		arr.Push(k, k, false)
+	}
+	err := sf.CreateFromSorted(arr)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, sf.Close()) })
+	require.NotNil(t, sf.bloom)
+
+	var missing []byte
+	for i := 0; i < 10000; i++ {
+		candidate := []byte("missing")
+		candidate = binary.LittleEndian.AppendUint64(candidate, uint64(i))
+		if !sf.mayContainKey(candidate) {
+			missing = candidate
+			break
+		}
+	}
+	require.NotNil(t, missing)
+
+	offsets := bytes.Repeat([]byte{0}, 8*sf.nkeys)
+	_, err = sf.fp.WriteAt(offsets, 8)
+	require.NoError(t, err)
+
+	val, found, deleted, err := sf.getExact(missing)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.False(t, deleted)
+	assert.Nil(t, val)
 }
 
 // QzBQWVJJOUhU https://trialofcode.org/

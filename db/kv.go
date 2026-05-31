@@ -458,12 +458,11 @@ func (kv *KV) openSSTable() error {
 }
 
 func (tx *KVTX) Get(key []byte) (val []byte, ok bool, err error) {
-	iter, err := tx.Seek(key)
-	ok = err == nil && iter.Valid() && bytes.Equal(iter.Key(), key)
-	if ok {
-		val = iter.Val()
+	val, found, deleted, err := tx.levels.getExact(key)
+	if err != nil || !found || deleted {
+		return nil, false, err
 	}
-	return val, ok, err
+	return val, true, nil
 }
 
 func (kv *KV) Get(key []byte) (val []byte, ok bool, err error) {

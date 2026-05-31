@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+
+	"github.com/bits-and-blooms/bloom/v3"
 )
 
 type SortedKV interface {
@@ -26,6 +28,7 @@ type SortedFile struct {
 	FileName string
 	fp       *os.File
 	nkeys    int
+	bloom    *bloom.BloomFilter
 }
 
 func (file *SortedFile) Close() error {
@@ -53,6 +56,18 @@ func (file *SortedFile) Open() (err error) {
 
 const maxNKeys = 1 << 26 // ~67 million keys
 
+const sortedFileBloomFalsePositiveRate = 0.01
+const sortedFileBloomFooterSize = 16
+
+var sortedFileBloomMagic = [8]byte{'P', 'D', 'B', 'B', 'L', 'M', '1', '\n'}
+
+func newSortedFileBloom(expectedKeys int) *bloom.BloomFilter {
+	if expectedKeys < 1 {
+		expectedKeys = 1
+	}
+	return bloom.NewWithEstimates(uint(expectedKeys), sortedFileBloomFalsePositiveRate)
+}
+
 func (file *SortedFile) openExisting() error {
 	var buf [8]byte
 	if _, err := file.fp.ReadAt(buf[:8], 0); err != nil {
@@ -63,6 +78,42 @@ func (file *SortedFile) openExisting() error {
 		return errors.New("corrupted file: nkeys out of range")
 	}
 	file.nkeys = nkeys
+	return file.loadBloomFilter()
+}
+
+func (file *SortedFile) loadBloomFilter() error {
+	st, err := file.fp.Stat()
+	if err != nil {
+		return err
+	}
+	size := st.Size()
+	if size < sortedFileBloomFooterSize {
+		return nil
+	}
+
+	var footer [sortedFileBloomFooterSize]byte
+	if _, err = file.fp.ReadAt(footer[:], size-sortedFileBloomFooterSize); err != nil {
+		return err
+	}
+	if !bytes.Equal(footer[8:], sortedFileBloomMagic[:]) {
+		return nil
+	}
+
+	bloomLen := binary.LittleEndian.Uint64(footer[:8])
+	if bloomLen == 0 || bloomLen > uint64(size-sortedFileBloomFooterSize) {
+		return errors.New("corrupted file: bloom filter out of range")
+	}
+	dataStart := size - sortedFileBloomFooterSize - int64(bloomLen)
+	data := make([]byte, int(bloomLen))
+	if _, err = file.fp.ReadAt(data, dataStart); err != nil {
+		return err
+	}
+
+	filter := &bloom.BloomFilter{}
+	if err = filter.UnmarshalBinary(data); err != nil {
+		return err
+	}
+	file.bloom = filter
 	return nil
 }
 
@@ -80,6 +131,7 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	var buf [4 + 4 + 1]byte
 	nkeys := 0
 	offset := 8 + 8*kv.EstimatedSize()
+	filter := newSortedFileBloom(kv.EstimatedSize())
 	iter, err := kv.Iter()
 	for ; err == nil && iter.Valid(); err = iter.Next() {
 		key, val := iter.Key(), iter.Val()
@@ -109,6 +161,7 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 		}
 		offset += len(val)
 
+		filter.Add(key)
 		nkeys++
 	}
 	if err != nil {
@@ -121,6 +174,23 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	if _, err = file.fp.WriteAt(buf[:8], 0); err != nil {
 		return err
 	}
+
+	bloomData, err := filter.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if _, err = file.fp.WriteAt(bloomData, int64(offset)); err != nil {
+		return err
+	}
+	offset += len(bloomData)
+
+	var footer [sortedFileBloomFooterSize]byte
+	binary.LittleEndian.PutUint64(footer[:8], uint64(len(bloomData)))
+	copy(footer[8:], sortedFileBloomMagic[:])
+	if _, err = file.fp.WriteAt(footer[:], int64(offset)); err != nil {
+		return err
+	}
+	file.bloom = filter
 
 	return file.fp.Sync()
 }
@@ -193,6 +263,28 @@ func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, er
 	}
 	deleted = buf[4+4] != 0
 	return data[:klen], data[klen:], deleted, nil
+}
+
+func (file *SortedFile) mayContainKey(key []byte) bool {
+	return file.bloom == nil || file.bloom.Test(key)
+}
+
+func (file *SortedFile) getExact(key []byte) (val []byte, found bool, deleted bool, err error) {
+	if !file.mayContainKey(key) {
+		return nil, false, false, nil
+	}
+	pos, err := file.findPos(key)
+	if err != nil {
+		return nil, false, false, err
+	}
+	if pos >= file.nkeys {
+		return nil, false, false, nil
+	}
+	foundKey, val, deleted, err := file.index(pos)
+	if err != nil || !bytes.Equal(foundKey, key) {
+		return nil, false, false, err
+	}
+	return val, true, deleted, nil
 }
 
 func (file *SortedFile) Seek(key []byte) (SortedKVIter, error) {

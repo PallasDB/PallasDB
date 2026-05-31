@@ -2,6 +2,21 @@ package db
 
 import "bytes"
 
+type sortedKVExactGetter interface {
+	getExact(key []byte) (val []byte, found bool, deleted bool, err error)
+}
+
+func getExactFromSortedKV(kv SortedKV, key []byte) (val []byte, found bool, deleted bool, err error) {
+	if getter, ok := kv.(sortedKVExactGetter); ok {
+		return getter.getExact(key)
+	}
+	iter, err := kv.Seek(key)
+	if err != nil || !iter.Valid() || !bytes.Equal(iter.Key(), key) {
+		return nil, false, false, err
+	}
+	return iter.Val(), true, iter.Deleted(), nil
+}
+
 type MergedSortedKV []SortedKV
 
 func (m MergedSortedKV) EstimatedSize() (total int) {
@@ -29,6 +44,16 @@ func (m MergedSortedKV) Seek(key []byte) (iter SortedKVIter, err error) {
 		}
 	}
 	return &MergedSortedKVIter{levels, levelsLowest(levels)}, nil
+}
+
+func (m MergedSortedKV) getExact(key []byte) (val []byte, found bool, deleted bool, err error) {
+	for _, sub := range m {
+		val, found, deleted, err = getExactFromSortedKV(sub, key)
+		if err != nil || found {
+			return val, found, deleted, err
+		}
+	}
+	return nil, false, false, nil
 }
 
 type MergedSortedKVIter struct {
