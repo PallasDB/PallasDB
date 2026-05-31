@@ -105,6 +105,58 @@ go run ./cmd/pallasdb local delete hello --data-dir ./data
 go run ./cmd/pallasdb local compact --data-dir ./data
 ```
 
+### Local benchmark
+
+PallasDB includes a disk-backed benchmark runner for local stores:
+
+```sh
+go run ./cmd/pallasdb local benchmark \
+  --data-dir "$HOME/bench-data/pallasdb-m4/v128" \
+  --reset --keys 2000000 --value-size 128 --batch-size 1000 \
+  --read-ops 500000 --compact \
+  --format text --output benchmarks/m4-macbook-air-results.txt
+```
+
+Benchmark artifacts from the Apple M4 MacBook Air run are checked in:
+
+- Plan: [`benchmarks/PallasDB-M4-Benchmark.md`](benchmarks/PallasDB-M4-Benchmark.md)
+- Results: [`benchmarks/m4-macbook-air-results.txt`](benchmarks/m4-macbook-air-results.txt)
+
+Verification commands:
+
+```sh
+go test ./cmd/pallasdb -run 'TestLocalBenchmark'
+go test ./db ./cmd/pallasdb
+```
+
+Both passed for the benchmark implementation.
+
+Commands run for the recorded M4 benchmark:
+
+```sh
+go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/smoke" --reset --keys 20000 --value-size 128 --batch-size 500 --read-ops 20000 --scan-limit 20000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v128" --reset --keys 2000000 --value-size 128 --batch-size 1000 --read-ops 500000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v1024" --reset --keys 500000 --value-size 1024 --batch-size 1000 --read-ops 300000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+
+go run ./cmd/pallasdb local benchmark --data-dir "$HOME/bench-data/pallasdb-m4/v16384" --reset --keys 50000 --value-size 16384 --batch-size 250 --read-ops 100000 --compact --format text --output benchmarks/m4-macbook-air-results.txt
+```
+
+Summary:
+
+| Value size | Keys | Populate ops/sec | Random read ops/sec | Iterate values ops/sec | Data dir size |
+|---:|---:|---:|---:|---:|---:|
+| 128 B | 2,000,000 | 19,993.37 | 26,588.23 | 974,720.76 | 324,396,366 B |
+| 1 KiB | 500,000 | 43,362.86 | 33,529.22 | 732,912.96 | 529,099,166 B |
+| 16 KiB | 50,000 | 12,281.01 | 5,364.19 | 141,650.58 | 820,910,006 B |
+
+Correctness notes:
+
+- Final smoke and scaled runs reported `missing: 0` and `errors: 0`.
+- Smoke run verified expected counts: populate `20000`, random read found `20000`, iteration `20000`.
+- Initial smoke attempt failed because the parent benchmark data directory did not exist; the benchmark runner now creates the benchmark data directory before opening PallasDB, and the benchmark was rerun successfully.
+
 ### Single-node gRPC server
 
 ```sh
