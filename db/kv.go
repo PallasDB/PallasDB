@@ -266,6 +266,10 @@ func (kv *KV) updateLog(tx *KVTX) error {
 }
 
 func (kv *KV) updateMem(tx *KVTX) {
+	if len(kv.ongoing) == 1 && appendSortedArray(&kv.mem, &tx.updates) {
+		return
+	}
+
 	merged := SortedArray{}
 	iter, err := MergedSortedKV{&tx.updates, &kv.mem}.Iter()
 	for ; err == nil && iter.Valid(); err = iter.Next() {
@@ -273,6 +277,19 @@ func (kv *KV) updateMem(tx *KVTX) {
 	}
 	check(err == nil)
 	kv.mem = merged
+}
+
+func appendSortedArray(dst, src *SortedArray) bool {
+	if src.Size() == 0 {
+		return true
+	}
+	if dst.Size() != 0 && bytes.Compare(dst.keys[len(dst.keys)-1], src.keys[0]) >= 0 {
+		return false
+	}
+	dst.keys = append(dst.keys, src.keys...)
+	dst.vals = append(dst.vals, src.vals...)
+	dst.deleted = append(dst.deleted, src.deleted...)
+	return true
 }
 
 func (kv *KV) updateHistory(tx *KVTX) {

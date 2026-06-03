@@ -239,21 +239,17 @@ func (file *SortedFile) Iter() (SortedKVIter, error) {
 }
 
 func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, err error) {
-	check(0 <= pos && pos < file.nkeys)
-	var buf [4 + 4 + 1]byte
-	if _, err = file.fp.ReadAt(buf[:], int64(8+8*pos)); err != nil {
+	offset, err := file.entryOffset(pos)
+	if err != nil {
 		return nil, nil, false, err
-	}
-	offset := int64(binary.LittleEndian.Uint64(buf[:8]))
-	if int64(8+8*file.nkeys) > offset {
-		return nil, nil, false, errors.New("corrupted file")
 	}
 
-	if _, err = file.fp.ReadAt(buf[:4+4+1], offset); err != nil {
+	var header [4 + 4 + 1]byte
+	if _, err = file.fp.ReadAt(header[:], offset); err != nil {
 		return nil, nil, false, err
 	}
-	klen := binary.LittleEndian.Uint32(buf[0:4])
-	vlen := binary.LittleEndian.Uint32(buf[4:8])
+	klen := binary.LittleEndian.Uint32(header[0:4])
+	vlen := binary.LittleEndian.Uint32(header[4:8])
 	if int64(klen)+int64(vlen) > maxEntrySize {
 		return nil, nil, false, errors.New("entry too large")
 	}
@@ -261,8 +257,51 @@ func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, er
 	if _, err = file.fp.ReadAt(data, offset+4+4+1); err != nil {
 		return nil, nil, false, err
 	}
-	deleted = buf[4+4] != 0
+	deleted = header[4+4] != 0
 	return data[:klen], data[klen:], deleted, nil
+}
+
+func (file *SortedFile) entryOffset(pos int) (int64, error) {
+	check(0 <= pos && pos < file.nkeys)
+
+	var buf [8]byte
+	if _, err := file.fp.ReadAt(buf[:], int64(8+8*pos)); err != nil {
+		return 0, err
+	}
+	offset := int64(binary.LittleEndian.Uint64(buf[:]))
+	if int64(8+8*file.nkeys) > offset {
+		return 0, errors.New("corrupted file")
+	}
+	return offset, nil
+}
+
+func (file *SortedFile) compareKeyAt(pos int, target []byte) (int, error) {
+	offset, err := file.entryOffset(pos)
+	if err != nil {
+		return 0, err
+	}
+
+	var header [4 + 4 + 1]byte
+	if _, err = file.fp.ReadAt(header[:], offset); err != nil {
+		return 0, err
+	}
+	klen := binary.LittleEndian.Uint32(header[0:4])
+	vlen := binary.LittleEndian.Uint32(header[4:8])
+	if int64(klen)+int64(vlen) > maxEntrySize {
+		return 0, errors.New("entry too large")
+	}
+
+	var stackKey [256]byte
+	key := stackKey[:]
+	if int(klen) > len(stackKey) {
+		key = make([]byte, int(klen))
+	} else {
+		key = key[:klen]
+	}
+	if _, err = file.fp.ReadAt(key, offset+4+4+1); err != nil {
+		return 0, err
+	}
+	return bytes.Compare(target, key), nil
 }
 
 func (file *SortedFile) mayContainKey(key []byte) bool {
@@ -303,11 +342,10 @@ func (file *SortedFile) findPos(target []byte) (int, error) {
 	lo, hi := 0, file.nkeys
 	for lo < hi {
 		mid := lo + (hi-lo)/2
-		key, _, _, err := file.index(mid)
+		r, err := file.compareKeyAt(mid, target)
 		if err != nil {
 			return -1, err
 		}
-		r := bytes.Compare(target, key)
 		if r > 0 {
 			lo = mid + 1
 		} else if r < 0 {

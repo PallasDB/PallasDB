@@ -142,6 +142,7 @@ Benchmark artifacts from the Apple M4 MacBook Air run are checked in:
 
 - Plan: [`benchmarks/PallasDB-M4-Benchmark.md`](benchmarks/PallasDB-M4-Benchmark.md)
 - Results: [`benchmarks/m4-macbook-air-results.txt`](benchmarks/m4-macbook-air-results.txt)
+- Optimization notes: [`benchmarks/performance-optimizations-2026-06-03.md`](benchmarks/performance-optimizations-2026-06-03.md)
 
 Verification commands:
 
@@ -177,6 +178,17 @@ Correctness notes:
 - Final smoke and scaled runs reported `missing: 0` and `errors: 0`.
 - Smoke run verified expected counts: populate `20000`, random read found `20000`, iteration `20000`.
 - Initial smoke attempt failed because the parent benchmark data directory did not exist; the benchmark runner now creates the benchmark data directory before opening PallasDB, and the benchmark was rerun successfully.
+
+Recent storage-engine optimization results:
+
+| Workload | Before | After | Change |
+|---|---:|---:|---:|
+| 16 KiB random read latency | 32,442.98 ns/op | 17,044.86 ns/op | 47.5% lower |
+| 16 KiB random read throughput | 30,823.31 ops/sec | 58,668.70 ops/sec | 90.3% higher |
+| 16 KiB random read total allocation | 2,282,052,872 B | 188,000,376 B | 91.8% lower |
+| 16 KiB random read GC count | 775 | 56 | 92.8% lower |
+
+The optimized code avoids reading SSTable values during binary-search comparisons and appends ordered write batches directly to the memtable when no snapshot requires the merge path. See the optimization notes for commands, environment, and verification output.
 
 ### Single-node gRPC server
 
