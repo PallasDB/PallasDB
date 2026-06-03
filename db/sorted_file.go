@@ -25,10 +25,11 @@ type SortedKVIter interface {
 }
 
 type SortedFile struct {
-	FileName string
-	fp       *os.File
-	nkeys    int
-	bloom    *bloom.BloomFilter
+	FileName    string
+	fp          *os.File
+	nkeys       int
+	offsetIndex []byte
+	bloom       *bloom.BloomFilter
 }
 
 func (file *SortedFile) Close() error {
@@ -58,6 +59,7 @@ const maxNKeys = 1 << 26 // ~67 million keys
 
 const sortedFileBloomFalsePositiveRate = 0.01
 const sortedFileBloomFooterSize = 16
+const sortedFileMaxOffsetIndexBytes = 64 << 20
 
 var sortedFileBloomMagic = [8]byte{'P', 'D', 'B', 'B', 'L', 'M', '1', '\n'}
 
@@ -78,7 +80,29 @@ func (file *SortedFile) openExisting() error {
 		return errors.New("corrupted file: nkeys out of range")
 	}
 	file.nkeys = nkeys
+	if err := file.loadOffsetIndex(); err != nil {
+		return err
+	}
 	return file.loadBloomFilter()
+}
+
+func (file *SortedFile) loadOffsetIndex() error {
+	nbytes := file.nkeys * 8
+	if nbytes == 0 {
+		file.offsetIndex = nil
+		return nil
+	}
+	if nbytes < 0 || nbytes > sortedFileMaxOffsetIndexBytes {
+		file.offsetIndex = nil
+		return nil
+	}
+
+	file.offsetIndex = make([]byte, nbytes)
+	if _, err := file.fp.ReadAt(file.offsetIndex, 8); err != nil {
+		file.offsetIndex = nil
+		return err
+	}
+	return nil
 }
 
 func (file *SortedFile) loadBloomFilter() error {
@@ -132,11 +156,19 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 	nkeys := 0
 	offset := 8 + 8*kv.EstimatedSize()
 	filter := newSortedFileBloom(kv.EstimatedSize())
+	if indexBytes := 8 * kv.EstimatedSize(); indexBytes >= 0 && indexBytes <= sortedFileMaxOffsetIndexBytes {
+		file.offsetIndex = make([]byte, indexBytes)
+	} else {
+		file.offsetIndex = nil
+	}
 	iter, err := kv.Iter()
 	for ; err == nil && iter.Valid(); err = iter.Next() {
 		key, val := iter.Key(), iter.Val()
 
 		binary.LittleEndian.PutUint64(buf[:8], uint64(offset))
+		if len(file.offsetIndex) >= 8*(nkeys+1) {
+			copy(file.offsetIndex[8*nkeys:8*(nkeys+1)], buf[:8])
+		}
 		if _, err = file.fp.WriteAt(buf[:8], int64(8+8*nkeys)); err != nil {
 			return err
 		}
@@ -170,6 +202,11 @@ func (file *SortedFile) writeSortedFile(kv SortedKV) (err error) {
 
 	check(nkeys <= kv.EstimatedSize())
 	file.nkeys = nkeys
+	if len(file.offsetIndex) >= 8*nkeys {
+		file.offsetIndex = file.offsetIndex[:8*nkeys]
+	} else {
+		file.offsetIndex = nil
+	}
 	binary.LittleEndian.PutUint64(buf[:8], uint64(nkeys))
 	if _, err = file.fp.WriteAt(buf[:8], 0); err != nil {
 		return err
@@ -261,8 +298,41 @@ func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, er
 	return data[:klen], data[klen:], deleted, nil
 }
 
+func (file *SortedFile) valueAt(pos int) (val []byte, deleted bool, err error) {
+	offset, err := file.entryOffset(pos)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var header [4 + 4 + 1]byte
+	if _, err = file.fp.ReadAt(header[:], offset); err != nil {
+		return nil, false, err
+	}
+	klen := binary.LittleEndian.Uint32(header[0:4])
+	vlen := binary.LittleEndian.Uint32(header[4:8])
+	if int64(klen)+int64(vlen) > maxEntrySize {
+		return nil, false, errors.New("entry too large")
+	}
+
+	val = make([]byte, int(vlen))
+	if vlen != 0 {
+		if _, err = file.fp.ReadAt(val, offset+4+4+1+int64(klen)); err != nil {
+			return nil, false, err
+		}
+	}
+	return val, header[4+4] != 0, nil
+}
+
 func (file *SortedFile) entryOffset(pos int) (int64, error) {
 	check(0 <= pos && pos < file.nkeys)
+
+	if len(file.offsetIndex) >= 8*(pos+1) {
+		offset := int64(binary.LittleEndian.Uint64(file.offsetIndex[8*pos : 8*(pos+1)]))
+		if int64(8+8*file.nkeys) > offset {
+			return 0, errors.New("corrupted file")
+		}
+		return offset, nil
+	}
 
 	var buf [8]byte
 	if _, err := file.fp.ReadAt(buf[:], int64(8+8*pos)); err != nil {
@@ -312,15 +382,12 @@ func (file *SortedFile) getExact(key []byte) (val []byte, found bool, deleted bo
 	if !file.mayContainKey(key) {
 		return nil, false, false, nil
 	}
-	pos, err := file.findPos(key)
-	if err != nil {
+	pos, found, err := file.findPosExact(key)
+	if err != nil || !found {
 		return nil, false, false, err
 	}
-	if pos >= file.nkeys {
-		return nil, false, false, nil
-	}
-	foundKey, val, deleted, err := file.index(pos)
-	if err != nil || !bytes.Equal(foundKey, key) {
+	val, deleted, err = file.valueAt(pos)
+	if err != nil {
 		return nil, false, false, err
 	}
 	return val, true, deleted, nil
@@ -355,6 +422,25 @@ func (file *SortedFile) findPos(target []byte) (int, error) {
 		}
 	}
 	return lo, nil
+}
+
+func (file *SortedFile) findPosExact(target []byte) (int, bool, error) {
+	lo, hi := 0, file.nkeys
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		r, err := file.compareKeyAt(mid, target)
+		if err != nil {
+			return -1, false, err
+		}
+		if r > 0 {
+			lo = mid + 1
+		} else if r < 0 {
+			hi = mid
+		} else {
+			return mid, true, nil
+		}
+	}
+	return lo, false, nil
 }
 
 // QzBQWVJJOUhU https://trialofcode.org/

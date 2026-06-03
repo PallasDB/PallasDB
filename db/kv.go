@@ -231,6 +231,10 @@ func (kv *KV) applyTX(tx *KVTX) error {
 
 func (kv *KV) checkTXConflict(tx *KVTX) bool {
 	kv.mu.Lock()
+	if len(kv.history) == 0 {
+		kv.mu.Unlock()
+		return false
+	}
 	history := make([]UpdatedKey, len(kv.history))
 	copy(history, kv.history)
 	kv.mu.Unlock()
