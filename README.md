@@ -1,4 +1,4 @@
-<img width="1280" height="320" alt="PallasDB-banner" src="https://github.com/user-attachments/assets/9628a214-8a86-40b2-a0e6-77afd49de060" />
+<img width="1280" height="320" alt="PallasDB-banner (1)" src="https://github.com/user-attachments/assets/d4c80e9e-2673-4e89-b914-54a8280a3eaf" />
 
 <h1 align="center">PallasDB</h1>
 
