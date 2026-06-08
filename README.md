@@ -8,18 +8,18 @@ A key-value database in Go using LSM trees, SSTables, write-ahead logging, concu
 
 <p align="center">
   <a href="https://github.com/PallasDB/PallasDB/actions/workflows/lint.yml">
-  <img src="https://img.shields.io/github/actions/workflow/status/teddymalhan/PallasDB/lint.yml?branch=main&style=for-the-badge&label=Lint" alt="CI status" />
+  <img src="https://img.shields.io/github/actions/workflow/status/PallasDB/PallasDB/lint.yml?branch=main&style=for-the-badge&label=Lint" alt="CI status" />
 </a>
   <a href="https://github.com/PallasDB/PallasDB/actions/workflows/test.yml">
-  <img src="https://img.shields.io/github/actions/workflow/status/teddymalhan/PallasDB/test.yml?branch=main&style=for-the-badge&label=Tests" alt="Tests status" />
+  <img src="https://img.shields.io/github/actions/workflow/status/PallasDB/PallasDB/test.yml?branch=main&style=for-the-badge&label=Tests" alt="Tests status" />
 </a>
   <a href="https://github.com/PallasDB/PallasDB/actions/workflows/security.yml">
-  <img src="https://img.shields.io/github/actions/workflow/status/teddymalhan/PallasDB/security.yml?branch=main&style=for-the-badge&label=Security" alt="Security status" />
+  <img src="https://img.shields.io/github/actions/workflow/status/PallasDB/PallasDB/security.yml?branch=main&style=for-the-badge&label=Security" alt="Security status" />
 </a>
   <a href="https://github.com/PallasDB/PallasDB/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/teddymalhan/PallasDB?style=for-the-badge" alt="MIT license" />
+    <img src="https://img.shields.io/github/license/PallasDB/PallasDB?style=for-the-badge" alt="Apache-2.0 license" />
   </a>
-  <a href="https://github.com/PallasDB/PallasDB/blob/main/package.json">
+  <a href="https://github.com/PallasDB/PallasDB/blob/main/go.mod">
     <img src="https://img.shields.io/badge/Go-00ADD8?logo=Go&logoColor=white&style=for-the-badge" alt="Go" />
   </a>
 </p>
