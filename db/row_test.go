@@ -131,18 +131,30 @@ func TestEncodeKeyPrefix(t *testing.T) {
 	}
 
 	// Empty prefix (no cells) - should produce just the table header
-	key := EncodeKeyPrefix(schema, 0, nil, false)
+	key, err := EncodeKeyPrefix(schema, 0, nil, false)
+	require.NoError(t, err)
 	assert.True(t, len(key) > 0)
 	assert.Equal(t, []byte("t\x00\x00"), key)
 
 	// With positive suffix
-	key = EncodeKeyPrefix(schema, 0, nil, true)
+	key, err = EncodeKeyPrefix(schema, 0, nil, true)
+	require.NoError(t, err)
 	assert.Equal(t, []byte("t\x00\x00\xff"), key)
 
 	// With one cell prefix
 	cells := []Cell{{Type: TypeI64, I64: 42}}
-	key = EncodeKeyPrefix(schema, 0, cells, false)
+	key, err = EncodeKeyPrefix(schema, 0, cells, false)
+	require.NoError(t, err)
 	assert.True(t, len(key) > len("t\x00\x00"))
+
+	// A prefix longer than the index, an unknown index or a mistyped cell are
+	// caller errors, not panics.
+	_, err = EncodeKeyPrefix(schema, 0, []Cell{{Type: TypeI64}, {Type: TypeStr}, {Type: TypeI64}}, false)
+	assert.Error(t, err)
+	_, err = EncodeKeyPrefix(schema, 7, nil, false)
+	assert.Error(t, err)
+	_, err = EncodeKeyPrefix(schema, 0, []Cell{{Type: TypeStr}}, false)
+	assert.Error(t, err)
 }
 
 func TestRowEncodeDecodeAllTypes(t *testing.T) {
@@ -179,4 +191,38 @@ func TestRowEncodeDecodeAllTypes(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, row, decoded)
 	}
+}
+
+func TestSchemaValidate(t *testing.T) {
+	good := Schema{
+		Version: SchemaVersion,
+		Table:   "t",
+		Cols:    []Column{{"a", TypeI64}, {"b", TypeStr}},
+		Indices: [][]int{{0}, {1, 0}},
+	}
+	require.NoError(t, good.Validate())
+
+	bad := func(mutate func(s *Schema)) {
+		t.Helper()
+		s := good
+		s.Cols = slices.Clone(good.Cols)
+		s.Indices = slices.Clone(good.Indices)
+		mutate(&s)
+		assert.Error(t, s.Validate())
+	}
+	bad(func(s *Schema) { s.Version = SchemaVersion + 1 })
+	bad(func(s *Schema) { s.Table = "" })
+	bad(func(s *Schema) { s.Cols = nil })
+	bad(func(s *Schema) { s.Cols[1] = Column{"b", CellType(9)} })
+	bad(func(s *Schema) { s.Cols[1] = Column{"", TypeStr} })
+	bad(func(s *Schema) { s.Indices = nil })
+	bad(func(s *Schema) { s.Indices[1] = nil })
+	bad(func(s *Schema) { s.Indices[1] = []int{7} })
+	bad(func(s *Schema) { s.Indices[1] = []int{-1} })
+	bad(func(s *Schema) {
+		s.Indices = make([][]int, 257)
+		for i := range s.Indices {
+			s.Indices[i] = []int{0}
+		}
+	})
 }

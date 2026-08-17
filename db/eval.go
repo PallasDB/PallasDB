@@ -9,7 +9,17 @@ import (
 	"strings"
 )
 
+// evalExpr evaluates expr against row. The expression tree is caller supplied
+// (and may be deeply left nested, e.g. `1+1+1+...`), so the recursion is
+// depth-capped instead of trusting the parser's own cap.
 func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
+	return evalExprAt(schema, row, expr, 0)
+}
+
+func evalExprAt(schema *Schema, row Row, expr any, depth int) (*Cell, error) {
+	if depth > maxExprDepth {
+		return nil, errTooDeep
+	}
 	switch e := expr.(type) {
 	case string:
 		idx := slices.IndexFunc(schema.Cols, func(col Column) bool {
@@ -22,7 +32,7 @@ func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
 	case *Cell:
 		return e, nil
 	case *ExprUnOp:
-		kid, err := evalExpr(schema, row, e.kid)
+		kid, err := evalExprAt(schema, row, e.kid, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -38,11 +48,11 @@ func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
 			return nil, errors.New("bad unary op")
 		}
 	case *ExprBinOp:
-		left, err := evalExpr(schema, row, e.left)
+		left, err := evalExprAt(schema, row, e.left, depth+1)
 		if err != nil {
 			return nil, err
 		}
-		right, err := evalExpr(schema, row, e.right)
+		right, err := evalExprAt(schema, row, e.right, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -55,14 +65,18 @@ func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
 		// comparison
 		case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LT, OP_GT:
 			r := 0
-			switch out.Type {
+			switch left.Type {
 			case TypeI64:
 				r = cmp.Compare(left.I64, right.I64)
 			case TypeStr:
 				r = bytes.Compare(left.Str, right.Str)
 			default:
-				panic("unreachable")
+				return nil, errors.New("bad cell type")
 			}
+			// A comparison is a boolean, whatever the operands were: typing it
+			// after the operands made `a = 'x' AND ...` a type error.
+			out.Type = TypeI64
+			out.Str = nil
 			b := false
 			switch e.op {
 			case OP_EQ:
@@ -117,9 +131,9 @@ func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
 		}
 		return out, nil
 	case *ExprTuple:
-		return nil, errors.New("unimplemented")
+		return nil, errors.New("a tuple is not a value")
 	default:
-		panic("unreachable")
+		return nil, errors.New("unsupported expression")
 	}
 }
 
@@ -130,7 +144,7 @@ func cell2str(cell *Cell) string {
 	case TypeStr:
 		return string(cell.Str)
 	default:
-		panic("unreachable")
+		return ""
 	}
 }
 
@@ -165,35 +179,47 @@ func exprop2str(op ExprOp) string {
 	case OP_NEG:
 		return "-"
 	default:
-		panic("unreachable")
+		return "?"
 	}
 }
 
+// expr2str renders an expression for a result header. It is display only: an
+// unrepresentable node degrades to a placeholder rather than panicking, and the
+// recursion is depth-capped like evalExpr.
 func expr2str(expr any) string {
+	return expr2strAt(expr, 0)
+}
+
+func expr2strAt(expr any, depth int) string {
+	if depth > maxExprDepth {
+		return "..."
+	}
 	switch e := expr.(type) {
 	case string:
 		return e
 	case *Cell:
 		return cell2str(e)
+	case *ExprStar:
+		return "*"
 	case *ExprUnOp:
 		switch e.op {
 		case OP_NEG:
-			return "-" + expr2str(e.kid)
+			return "-" + expr2strAt(e.kid, depth+1)
 		case OP_NOT:
-			return "NOT " + expr2str(e.kid)
+			return "NOT " + expr2strAt(e.kid, depth+1)
 		default:
-			panic("unreachable")
+			return "?"
 		}
 	case *ExprBinOp:
-		return "(" + expr2str(e.left) + " " + exprop2str(e.op) + " " + expr2str(e.right) + ")"
+		return "(" + expr2strAt(e.left, depth+1) + " " + exprop2str(e.op) + " " + expr2strAt(e.right, depth+1) + ")"
 	case *ExprTuple:
 		parts := make([]string, len(e.kids))
 		for i, kid := range e.kids {
-			parts[i] = expr2str(kid)
+			parts[i] = expr2strAt(kid, depth+1)
 		}
 		return "(" + strings.Join(parts, ", ") + ")"
 	default:
-		panic("unreachable")
+		return "?"
 	}
 }
 
