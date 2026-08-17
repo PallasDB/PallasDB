@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,7 +35,6 @@ func newTestServer(t *testing.T, opts ...grpc.ServerOption) (store *db.KV, dial 
 
 	lis := bufconn.Listen(1024 * 1024)
 	srv = NewGRPCServer(store, opts...)
-	go func() { _ = srv.Serve(lis) }()
 
 	t.Cleanup(func() {
 		srv.Stop()
@@ -42,8 +42,15 @@ func newTestServer(t *testing.T, opts ...grpc.ServerOption) (store *db.KV, dial 
 		_ = store.Close()
 	})
 
+	// Serving starts on the first dial, not here. grpc-go calls log.Fatal on a
+	// RegisterService that lands after Serve, and callers receive srv precisely
+	// so they can register extra services — starting Serve eagerly would race
+	// those registrations and kill the test binary.
+	var serveOnce sync.Once
+
 	dial = func(dialOpts ...grpc.DialOption) *grpc.ClientConn {
 		t.Helper()
+		serveOnce.Do(func() { go func() { _ = srv.Serve(lis) }() })
 		dialOpts = append(dialOpts,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
 		)
