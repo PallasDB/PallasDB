@@ -18,10 +18,14 @@ func NewParser(s string) Parser {
 	return Parser{buf: s, pos: 0}
 }
 
+// StmtSelect is a parsed SELECT. A nil cond matches every row and a negative
+// limit means "no LIMIT".
 type StmtSelect struct {
-	table string
-	cols  []any // ExprUnOp | ExprBinOp | string | *Cell
-	cond  any
+	table  string
+	cols   []any // ExprUnOp | ExprBinOp | ExprTuple | ExprStar | string | *Cell
+	cond   any
+	limit  int64
+	offset int64
 }
 
 type NamedCell struct {
@@ -55,6 +59,10 @@ type StmtUpdate struct {
 type StmtDelete struct {
 	table string
 	cond  any
+}
+
+type StmtDropTable struct {
+	table string
 }
 
 func isSpace(ch byte) bool {
@@ -198,9 +206,14 @@ func (p *Parser) parseAssign(out *ExprAssign) (err error) {
 }
 
 func (p *Parser) parseSelect(out *StmtSelect) (err error) {
+	out.limit = -1
 	for !p.tryKeyword("FROM") {
 		if len(out.cols) > 0 && !p.tryPunctuation(",") {
 			return errors.New("expect comma")
+		}
+		if p.tryStar() {
+			out.cols = append(out.cols, &ExprStar{})
+			continue
 		}
 		expr, err := p.parseExpr()
 		if err != nil {
@@ -215,21 +228,73 @@ func (p *Parser) parseSelect(out *StmtSelect) (err error) {
 	if out.table, ok = p.tryName(); !ok {
 		return errors.New("expect table name")
 	}
-	out.cond, err = p.parseWhere()
-	return err
+	if out.cond, err = p.parseWhere(); err != nil {
+		return err
+	}
+	if err = p.parseLimit(out); err != nil {
+		return err
+	}
+	return p.parseEnd()
 }
 
+// tryStar accepts `*` only where a whole column item is expected, that is when
+// it is immediately followed by `,` or FROM. Everywhere else `*` stays
+// multiplication.
+func (p *Parser) tryStar() bool {
+	save := p.pos
+	if !p.tryPunctuation("*") {
+		return false
+	}
+	star := p.pos
+	if p.tryPunctuation(",") || p.tryKeyword("FROM") {
+		p.pos = star
+		return true
+	}
+	p.pos = save
+	return false
+}
+
+// parseWhere parses an optional WHERE clause. A missing WHERE yields a nil
+// condition, which matches every row.
 func (p *Parser) parseWhere() (expr any, err error) {
 	if !p.tryKeyword("WHERE") {
-		return nil, errors.New("expect keyword")
+		return nil, nil
 	}
-	if expr, err = p.parseExpr(); err != nil {
-		return nil, err
+	return p.parseExpr()
+}
+
+// parseLimit parses an optional `LIMIT n [OFFSET m]` clause.
+func (p *Parser) parseLimit(out *StmtSelect) (err error) {
+	if !p.tryKeyword("LIMIT") {
+		return nil
 	}
+	if out.limit, err = p.parseCount(); err != nil {
+		return err
+	}
+	if p.tryKeyword("OFFSET") {
+		if out.offset, err = p.parseCount(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) parseCount() (int64, error) {
+	cell := Cell{}
+	if err := p.parseValue(&cell); err != nil {
+		return 0, err
+	}
+	if cell.Type != TypeI64 || cell.I64 < 0 {
+		return 0, errors.New("expect a non-negative integer")
+	}
+	return cell.I64, nil
+}
+
+func (p *Parser) parseEnd() error {
 	if !p.tryPunctuation(";") {
-		return nil, errors.New("expect ;")
+		return errors.New("expect ;")
 	}
-	return expr, nil
+	return nil
 }
 
 func (p *Parser) parseCommaList(item func() error) error {
@@ -296,14 +361,10 @@ func (p *Parser) parseCreateTable(out *StmtCreatTable) error {
 	if out.table, ok = p.tryName(); !ok {
 		return errors.New("expect table name")
 	}
-	err := p.parseCommaList(func() error { return p.parseCreateTableItem(out) })
-	if err != nil {
+	if err := p.parseCommaList(func() error { return p.parseCreateTableItem(out) }); err != nil {
 		return err
 	}
-	if !p.tryPunctuation(";") {
-		return errors.New("expect ;")
-	}
-	return nil
+	return p.parseEnd()
 }
 
 func (p *Parser) parseValueItem(out *[]Cell) error {
@@ -323,14 +384,10 @@ func (p *Parser) parseInsert(out *StmtInsert) error {
 	if !p.tryKeyword("VALUES") {
 		return errors.New("expect VALUES")
 	}
-	err := p.parseCommaList(func() error { return p.parseValueItem(&out.value) })
-	if err != nil {
+	if err := p.parseCommaList(func() error { return p.parseValueItem(&out.value) }); err != nil {
 		return err
 	}
-	if !p.tryPunctuation(";") {
-		return errors.New("expect ;")
-	}
-	return nil
+	return p.parseEnd()
 }
 
 func (p *Parser) parseUpdate(out *StmtUpdate) (err error) {
@@ -341,22 +398,20 @@ func (p *Parser) parseUpdate(out *StmtUpdate) (err error) {
 	if !p.tryKeyword("SET") {
 		return errors.New("expect SET")
 	}
-	for !p.tryKeyword("WHERE") {
+	for {
 		expr := ExprAssign{}
-		if len(out.value) > 0 && !p.tryKeyword(",") {
-			return errors.New("expect ,")
-		}
 		if err := p.parseAssign(&expr); err != nil {
 			return err
 		}
 		out.value = append(out.value, expr)
+		if !p.tryPunctuation(",") {
+			break
+		}
 	}
-	if len(out.value) == 0 {
-		return errors.New("expect assignment list")
+	if out.cond, err = p.parseWhere(); err != nil {
+		return err
 	}
-	p.pos -= len("WHERE")
-	out.cond, err = p.parseWhere()
-	return err
+	return p.parseEnd()
 }
 
 func (p *Parser) parseDelete(out *StmtDelete) (err error) {
@@ -364,8 +419,18 @@ func (p *Parser) parseDelete(out *StmtDelete) (err error) {
 	if out.table, ok = p.tryName(); !ok {
 		return errors.New("expect table name")
 	}
-	out.cond, err = p.parseWhere()
-	return err
+	if out.cond, err = p.parseWhere(); err != nil {
+		return err
+	}
+	return p.parseEnd()
+}
+
+func (p *Parser) parseDropTable(out *StmtDropTable) error {
+	var ok bool
+	if out.table, ok = p.tryName(); !ok {
+		return errors.New("expect table name")
+	}
+	return p.parseEnd()
 }
 
 func (p *Parser) parseStmt() (out any, err error) {
@@ -389,6 +454,10 @@ func (p *Parser) parseStmt() (out any, err error) {
 		stmt := &StmtDelete{}
 		err = p.parseDelete(stmt)
 		out = stmt
+	} else if p.tryKeyword("DROP", "TABLE") {
+		stmt := &StmtDropTable{}
+		err = p.parseDropTable(stmt)
+		out = stmt
 	} else {
 		err = errors.New("unknown statement")
 	}
@@ -401,6 +470,21 @@ func (p *Parser) parseStmt() (out any, err error) {
 func (p *Parser) isEnd() bool {
 	p.skipSpaces()
 	return p.pos >= len(p.buf)
+}
+
+// ParseStmt parses exactly one SQL statement, which must consume the whole
+// input. The returned value is one of the *Stmt* types and is meant to be fed
+// to (*DB).ExecStmt.
+func ParseStmt(s string) (any, error) {
+	p := NewParser(s)
+	stmt, err := p.parseStmt()
+	if err != nil {
+		return nil, err
+	}
+	if !p.isEnd() {
+		return nil, errors.New("trailing garbage after the statement")
+	}
+	return stmt, nil
 }
 
 type ExprOp uint8
@@ -437,6 +521,26 @@ type ExprTuple struct {
 	kids []any
 }
 
+// ExprStar is the `*` of `SELECT *`. It only ever appears in a select list and
+// is expanded to the table columns by the executor.
+type ExprStar struct{}
+
+var errTooDeep = errors.New("expression is nested too deeply")
+
+// enter guards every recursive descent into a sub-expression so that a
+// pathological input cannot overflow the stack. Callers must pair a successful
+// enter with a deferred leave.
+func (p *Parser) enter() error {
+	p.depth++
+	if p.depth > maxExprDepth {
+		p.depth--
+		return errTooDeep
+	}
+	return nil
+}
+
+func (p *Parser) leave() { p.depth-- }
+
 func (p *Parser) parseTuple() (expr any, err error) {
 	kids := []any{}
 	err = p.parseCommaList(func() error {
@@ -462,6 +566,10 @@ func (p *Parser) parseTuple() (expr any, err error) {
 func (p *Parser) parseAtom() (expr any, err error) {
 	if p.tryPunctuation("(") {
 		p.pos--
+		if err = p.enter(); err != nil {
+			return nil, err
+		}
+		defer p.leave()
 		return p.parseTuple()
 	}
 	if name, ok := p.tryName(); ok {
@@ -518,12 +626,10 @@ func (p *Parser) parseAnd() (any, error) {
 
 func (p *Parser) parseNot() (expr any, err error) {
 	if p.tryKeyword("NOT") {
-		p.depth++
-		if p.depth > maxExprDepth {
-			p.depth--
-			return nil, errors.New("expression too deeply nested")
+		if err = p.enter(); err != nil {
+			return nil, err
 		}
-		defer func() { p.depth-- }()
+		defer p.leave()
 		if expr, err = p.parseNot(); err != nil {
 			return nil, err
 		}
@@ -550,12 +656,10 @@ func (p *Parser) parseMul() (any, error) {
 
 func (p *Parser) parseNeg() (expr any, err error) {
 	if p.tryPunctuation("-") {
-		p.depth++
-		if p.depth > maxExprDepth {
-			p.depth--
-			return nil, errors.New("expression too deeply nested")
+		if err = p.enter(); err != nil {
+			return nil, err
 		}
-		defer func() { p.depth-- }()
+		defer p.leave()
 		if expr, err = p.parseNeg(); err != nil {
 			return nil, err
 		}
