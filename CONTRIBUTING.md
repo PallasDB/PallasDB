@@ -47,8 +47,10 @@ Blocking on every pull request:
   a Linux-only run never compiles the non-unix path. Race detection runs on
   Linux and macOS; the Windows leg runs without `-race`, because its job is
   build-tag coverage and a C toolchain is not guaranteed there.
-- **Coverage** — 80% project and patch targets, 2% threshold (`codecov.yml`).
-  The upload itself fails the build if it errors.
+- **Coverage** (`codecov.yml`) — the project status is a ratchet: `auto` with a
+  1% threshold, so a pull request fails if it makes overall coverage worse. The
+  patch status is a real number, 80% on the diff: new code must be tested. The
+  upload itself fails the build if it errors.
 - **Lint** (`.github/workflows/lint.yml`) — `go vet` and `.golangci.yml`.
 - **Security** (`.github/workflows/security.yml`) — `govulncheck`, CodeQL, and
   `gosec`. `gosec` is blocking.

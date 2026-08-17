@@ -3,10 +3,22 @@ codecov:
 
 coverage:
   status:
+    # A ratchet, not a cliff. `auto` compares against the base commit, so a PR
+    # fails if it makes overall coverage worse by more than the threshold. That
+    # encodes "never regress" instead of a number someone guessed, and it needs
+    # no maintenance as coverage climbs.
+    #
+    # Recorded starting point: at the merge base of the release-engineering
+    # wave, project coverage was 57.4% (db 85.9%, cmd/pallasdb 71.0%,
+    # cluster/discovery 22.9%, grpc 15.8%, cluster 0.0%). Do not quote that as
+    # current — the cluster and grpc holes were being filled in the same wave.
     project:
       default:
-        target: 80%
-        threshold: 2%
+        target: auto
+        threshold: 1%
+    # New code is held to a real number. Unlike the project target, 80% on a
+    # diff is achievable from day one, and it is the rule that actually keeps
+    # coverage moving in the right direction.
     patch:
       default:
         target: 80%

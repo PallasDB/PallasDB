@@ -82,8 +82,10 @@ acquired the release, security, and CI machinery it was missing.
 - Health status is reported per service and follows leadership, and message
   size, concurrent stream, and keepalive limits are set. The send limit was
   previously unbounded.
-- Coverage upload is blocking. A dropped upload used to leave the 80% project
-  and patch targets permanently unevaluated.
+- Coverage gating is real. The upload can now fail the build, which previously
+  left the targets permanently unevaluated, and the project status is a ratchet
+  (`auto`, 1% threshold) that fails a pull request making overall coverage
+  worse, with an 80% target on the diff itself.
 
 ### Fixed
 
