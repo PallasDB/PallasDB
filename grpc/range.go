@@ -130,6 +130,15 @@ func (r rangeScan) stream(tx *db.KVTX, out grpc.ServerStreamingServer[pbv1.Range
 	deadline := time.Now().Add(r.maxDuration)
 	var sent uint64
 	for iter.Valid() && r.inBounds(iter.Key()) {
+		// Engine metadata is not part of the user keyspace. Skipping rather
+		// than stopping keeps a whole-keyspace scan usable: the reserved keys
+		// sort before every table key, so aborting here would return nothing.
+		if db.IsReservedKey(iter.Key()) {
+			if err := r.advance(iter); err != nil {
+				return status.Errorf(codes.Internal, "iterate range: %v", err)
+			}
+			continue
+		}
 		resp := &pbv1.RangeResponse{Key: iter.Key()}
 		if !r.keysOnly {
 			resp.Value = iter.Val()

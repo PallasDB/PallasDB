@@ -446,13 +446,20 @@ func (tx *DBTX) Query(statement string) (*SQLResult, error) {
 	return tx.ExecStmt(stmt)
 }
 
-// reservedKeyPrefix guards the keyspace holding engine metadata such as table
+// ReservedKeyPrefix guards the keyspace holding engine metadata such as table
 // schemas. No table can collide with it: a table name always starts with a
-// letter or an underscore.
-const reservedKeyPrefix = "\x00pallasdb\x00"
+// letter or an underscore. It is exported so the network layer can refuse to
+// serve these keys -- in-process callers own their own data, but a remote KV
+// client overwriting a schema would corrupt every table built on it.
+const ReservedKeyPrefix = "\x00pallasdb\x00"
+
+// IsReservedKey reports whether key belongs to the engine rather than the user.
+func IsReservedKey(key []byte) bool {
+	return bytes.HasPrefix(key, []byte(ReservedKeyPrefix))
+}
 
 func schemaKey(table string) []byte {
-	return []byte(reservedKeyPrefix + "schema\x00" + table)
+	return []byte(ReservedKeyPrefix + "schema\x00" + table)
 }
 
 func (tx *DBTX) execCreateTable(stmt *StmtCreatTable) (err error) {

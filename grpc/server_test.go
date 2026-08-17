@@ -213,6 +213,39 @@ func TestRangeDescendingWithoutStartScansWholeKeyspace(t *testing.T) {
 	require.Equal(t, []string{"c", "b", "a"}, rangeKeys(msgs))
 }
 
+// Table schemas live in a reserved keyspace. A raw KV client must not be able
+// to read or overwrite them: doing so would corrupt every table built on that
+// schema, so the network API refuses the prefix outright and a whole-keyspace
+// scan walks past it.
+func TestReservedKeyspaceIsNotServed(t *testing.T) {
+	client, store := newTestClient(t)
+	ctx := testContext(t)
+
+	reserved := append([]byte(db.ReservedKeyPrefix), []byte("schema\x00people")...)
+	_, err := store.SetEx(reserved, []byte("engine state"), db.ModeUpsert)
+	require.NoError(t, err)
+	_, err = store.SetEx([]byte("visible"), []byte("v"), db.ModeUpsert)
+	require.NoError(t, err)
+
+	_, err = client.Get(ctx, &pbv1.GetRequest{Key: reserved})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = client.Put(ctx, &pbv1.PutRequest{Key: reserved, Value: []byte("hijacked")})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = client.Delete(ctx, &pbv1.DeleteRequest{Key: reserved})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// The write the client was refused never happened.
+	value, ok, err := store.Get(reserved)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []byte("engine state"), value)
+
+	// Reserved keys sort before every user key, so the scan must skip them
+	// rather than stop at the first one.
+	msgs := collectRange(t, client, ctx, &pbv1.RangeRequest{})
+	require.Equal(t, []string{"visible"}, rangeKeys(msgs))
+}
+
 func TestHealthReportsEachService(t *testing.T) {
 	_, dial, _ := newTestServer(t, WithSQL(staticExecutor{}))
 	ctx := testContext(t)
