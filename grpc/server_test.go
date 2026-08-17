@@ -198,16 +198,19 @@ func TestRangeRespectsServerLimit(t *testing.T) {
 	require.Equal(t, []string{"a", "b"}, rangeKeys(msgs))
 }
 
-// A descending scan of the whole keyspace needs a seek-to-end the storage layer
-// does not expose yet; it must be refused clearly rather than silently reversed.
-func TestRangeDescendingWithoutStartIsRejected(t *testing.T) {
-	client, _ := newTestClient(t)
+// A descending scan of the whole keyspace has no upper bound to seek to, so it
+// relies on the storage layer's seek-to-end. With that in place the scan walks
+// every key in reverse rather than being refused.
+func TestRangeDescendingWithoutStartScansWholeKeyspace(t *testing.T) {
+	client, store := newTestClient(t)
 	ctx := testContext(t)
+	for _, key := range []string{"a", "b", "c"} {
+		_, err := store.SetEx([]byte(key), []byte(key), db.ModeUpsert)
+		require.NoError(t, err)
+	}
 
-	stream, err := client.Range(ctx, &pbv1.RangeRequest{Descending: true})
-	require.NoError(t, err)
-	_, err = stream.Recv()
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	msgs := collectRange(t, client, ctx, &pbv1.RangeRequest{Descending: true})
+	require.Equal(t, []string{"c", "b", "a"}, rangeKeys(msgs))
 }
 
 func TestHealthReportsEachService(t *testing.T) {
