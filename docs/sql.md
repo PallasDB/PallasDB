@@ -59,7 +59,36 @@ Three ways, same parser and evaluator underneath:
 
 ```go
 sqlDB, err := db.NewDB("path/to/data")
+if err != nil {
+    log.Fatal(err)
+}
+defer sqlDB.Close()
+
+r, err := sqlDB.Query("SELECT a, b FROM t WHERE b = 1;")
+if err != nil {
+    log.Fatal(err)
+}
+defer r.Close() // mandatory: a SELECT holds a read transaction until Close
+
+for _, c := range r.Columns() {
+    fmt.Println(c.Name, c.Type)
+}
+for r.Next() {
+    row := r.Row() // valid until the next Next(); clone it to keep it
+    fmt.Println(row)
+}
+if err := r.Err(); err != nil {
+    log.Fatal(err)
+}
 ```
+
+`Next` returns false both at the end of the result and on error, so `Err` is
+what tells the two apart — `Close` reports only the failure to release the
+transaction, never the query error. `RowsAffected` carries the count for
+`INSERT`/`UPDATE`/`DELETE`; `Rows` drains everything into a slice for the cases
+where streaming is not worth the ceremony, and still requires a `Close`.
+`DBTX` has the same `Query`/`ExecStmt` pair, so a statement can run inside an
+existing transaction. `ParseStmt` exposes the parser on its own.
 
 **From the CLI**, against a local directory or a remote server:
 
