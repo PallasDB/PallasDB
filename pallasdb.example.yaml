@@ -1,4 +1,5 @@
 log:
+  # text or json
   format: text
 
 shutdown:
@@ -20,9 +21,51 @@ cluster:
   node_id: node-1
   join: ""
   apply_timeout: 10s
+  # Wait for this many nodes to be discovered before bootstrapping the Raft
+  # cluster. Anything above 1 requires serf.enabled and an empty `join`.
+  bootstrap_expect: 1
+  # Replicate without taking part in elections or quorum.
+  non_voter: false
+  # Ask the leader to remove this node from the configuration on clean exit.
+  leave_on_shutdown: true
+  # How long a failed node may stay in the Raft configuration before it is
+  # evicted. Negative disables eviction entirely.
+  failure_grace_period: 30s
+  # Compact in the background, as a single-node server does.
+  auto_compact: true
   serf:
     enabled: true
     addr: ":7946"
     advertise_addr: ""
     join: []
     event_buffer: 64
+    # Base64 gossip encryption key decoding to 16, 24 or 32 bytes.
+    # Empty leaves gossip unencrypted.
+    encrypt_key: ""
+  # Transport security between cluster nodes. Empty cert_file disables TLS.
+  tls:
+    cert_file: ""
+    key_file: ""
+    client_ca_file: ""
+    require_client_cert: false
+    min_version: "1.2"
+
+# Optional in-process read cache, shared by `serve grpc` and `cluster start`.
+# num_counters should be roughly ten times the expected number of cached items
+# and must never exceed max_cost_bytes.
+cache:
+  enabled: false
+  max_cost_bytes: 33554432
+  num_counters: 1000000
+
+# Defaults for the commands that talk to a running server:
+# `kv *`, `sql`, `dump` and `restore`. Every value is overridable per command
+# with --addr, --timeout and --max-redirects.
+client:
+  addr: "127.0.0.1:50051"
+  # Bounds a single request. `sql` in REPL mode and the bulk transfer performed
+  # by dump/restore apply it per statement or per key, not to the whole session.
+  timeout: 30s
+  # How many times a call may be retried against a newly discovered Raft leader
+  # after a follower answers Unavailable. 0 disables leader following.
+  max_redirects: 1
