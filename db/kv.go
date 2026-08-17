@@ -160,6 +160,11 @@ func (opts *KVOptions) setDefaults() {
 // transaction snapshot holds one more, so compaction can retire a table while
 // older snapshots keep reading it — the fd is closed and the file unlinked only
 // once the last reference goes away.
+//
+// The cost of that is bounded but real: an open transaction pins the tables it
+// captured, so a long-lived or leaked snapshot keeps superseded SSTables on disk
+// and the data directory cannot shrink until it ends. Abort or Commit promptly;
+// holding a transaction open is not free just because it only reads.
 type KV struct {
 	Options KVOptions
 	// metadata
