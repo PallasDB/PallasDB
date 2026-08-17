@@ -135,6 +135,9 @@ type Node struct {
 	leaveRPC LeaveFunc
 	after    afterFunc
 
+	fenceCh  chan raft.Observation
+	fenceObs *raft.Observer
+
 	closers []func() error
 
 	ctx    context.Context
@@ -215,6 +218,14 @@ func Open(kvStore *db.KV, cfg Config) (*Node, error) {
 		return fail(fmt.Errorf("new raft: %w", err))
 	}
 	node.raft = r
+
+	// Raft never routes a term's no-op entry to an FSM, so the leader has to
+	// fence its applied index explicitly or linearizable reads stall for the
+	// rest of the term. See fenceAppliedIndex. Registration happens here,
+	// before this node can win an election, so the first one is never missed.
+	node.watchLeadership()
+	node.wg.Add(1)
+	go node.leadershipFenceLoop(node.ctx)
 
 	hasState, err := raft.HasExistingState(logStore, stableStore, snapStore)
 	if err != nil {

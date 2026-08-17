@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,11 +27,6 @@ func (s *fsmtestSink) Write(p []byte) (int, error) { return s.buf.Write(p) }
 func (s *fsmtestSink) Close() error                { s.closed = true; return nil }
 func (s *fsmtestSink) Cancel() error               { s.cancelled = true; return nil }
 func (s *fsmtestSink) ID() string                  { return "fsmtest" }
-
-// fsmtestSource is a stand-in for *raft.Raft's applied index.
-type fsmtestSource struct{ idx atomic.Uint64 }
-
-func (s *fsmtestSource) AppliedIndex() uint64 { return s.idx.Load() }
 
 // fsmtestNew creates an FSM over a fresh data directory.
 func fsmtestNew(t *testing.T) *FSM {
@@ -378,11 +372,10 @@ func TestWaitForAppliedIndexContextCancelled(t *testing.T) {
 }
 
 // Raft never routes no-op or barrier entries to an FSM, so a waiter blocked on
-// such an index has to learn about it from the raft node itself.
-func TestWaitForAppliedIndexUsesIndexSource(t *testing.T) {
+// such an index is released by the leader's fence (Node.fenceAppliedIndex)
+// calling ObserveAppliedIndex rather than by anything reaching Apply.
+func TestWaitForAppliedIndexReleasedByObserve(t *testing.T) {
 	fsm := fsmtestNew(t)
-	src := &fsmtestSource{}
-	fsm.SetAppliedIndexSource(src)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -390,8 +383,14 @@ func TestWaitForAppliedIndexUsesIndexSource(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- fsm.WaitForAppliedIndex(ctx, 42) }()
 
-	time.Sleep(2 * appliedIndexPollInterval)
-	src.idx.Store(42) // a no-op entry raft applied without telling the FSM
+	// The waiter must still be blocked: nothing has applied index 42.
+	select {
+	case err := <-done:
+		t.Fatalf("WaitForAppliedIndex returned early: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	fsm.ObserveAppliedIndex(42) // what the leader's barrier fence does
 
 	select {
 	case err := <-done:
@@ -399,13 +398,11 @@ func TestWaitForAppliedIndexUsesIndexSource(t *testing.T) {
 			t.Fatalf("WaitForAppliedIndex: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("waiter never observed the raft index source")
+		t.Fatal("waiter never observed the fenced index")
 	}
 	if got := fsm.AppliedIndex(); got != 42 {
 		t.Fatalf("AppliedIndex = %d, want 42", got)
 	}
-
-	fsm.SetAppliedIndexSource(nil)
 }
 
 func TestSnapshotRestoreRoundTrip(t *testing.T) {

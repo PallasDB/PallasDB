@@ -239,8 +239,13 @@ func (s *ClusterKVServer) applyCommand(ctx context.Context, cmd cluster.Command)
 // costs no disk write anywhere in the cluster. STALE reads the local FSM
 // directly and is servable by any node, including one that has lost quorum.
 //
-// Until the FSM exposes its applied index, LINEARIZABLE falls back to the Raft
-// barrier: slower, but never less correct.
+// Waiting on the commit index only terminates because the leader fences its
+// applied index once per term (cluster.Node.fenceAppliedIndex): raft appends a
+// no-op per term that it never routes to an FSM, so the applied index cannot
+// reach the commit index on its own until some later write closes the gap.
+//
+// An FSM that does not report an applied index falls back to the Raft barrier:
+// slower, but never less correct.
 func (s *ClusterKVServer) readReady(ctx context.Context, consistency pbv1.Consistency) error {
 	if consistency == pbv1.Consistency_CONSISTENCY_STALE {
 		return nil

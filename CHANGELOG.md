@@ -89,6 +89,16 @@ acquired the release, security, and CI machinery it was missing.
 
 ### Fixed
 
+- A linearizable read no longer stalls until the next write. Raft appends one
+  no-op entry per leadership term and never routes it to an FSM, so the FSM's
+  applied index could not reach the commit index it was waiting on: the first
+  linearizable read after every election — and every read on an idle or
+  read-mostly cluster — failed with `DeadlineExceeded`. The leader now fences
+  its applied index with a Raft barrier once per term. The removed
+  `FSM.SetAppliedIndexSource` was not a fix for this: `raft.Raft.AppliedIndex()`
+  reports what Raft has handed to its FSM goroutine, not what the FSM has
+  applied, so polling it could return a linearizable read from a store the
+  write had not reached yet.
 - `WHERE` on non-key columns, and `OR`, `NOT`, `!=` and arithmetic within it,
   execute as an index scan plus filter (or a full scan) instead of failing with
   "unimplemented WHERE". A tuple comparison against a shorter index no longer

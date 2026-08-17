@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/teddymalhan/pallasdb/db"
@@ -21,12 +20,6 @@ const (
 	restoreDirSuffix = ".restore"
 	oldDirSuffix     = ".old"
 )
-
-// appliedIndexPollInterval is how often a blocked waiter re-reads the optional
-// raft index source. Raft never routes no-op, barrier or (absent a
-// ConfigurationStore) configuration entries to an FSM, so those indexes would
-// otherwise never be observed and a waiter could block until the next write.
-const appliedIndexPollInterval = 5 * time.Millisecond
 
 // ErrFSMClosed is returned by reads once the FSM has been closed.
 var ErrFSMClosed = errors.New("cluster: FSM is closed")
@@ -39,12 +32,6 @@ var ErrFSMClosed = errors.New("cluster: FSM is closed")
 type FSMResult struct {
 	Updated bool
 	Err     error
-}
-
-// AppliedIndexSource reports the highest raft log index the raft node itself has
-// applied. *raft.Raft satisfies it.
-type AppliedIndexSource interface {
-	AppliedIndex() uint64
 }
 
 // FSM wraps a db.KV and implements raft.FSM.
@@ -67,7 +54,6 @@ type FSM struct {
 
 	idxMu sync.Mutex
 	idxCh chan struct{} // closed and replaced whenever applied advances
-	idxSr AppliedIndexSource
 }
 
 func NewFSM(store *db.KV, dirpath string, kvOpts ...db.KVOption) *FSM {
@@ -203,17 +189,10 @@ func updateMode(mode int) (db.UpdateMode, error) {
 func (f *FSM) AppliedIndex() uint64 { return f.applied.Load() }
 
 // ObserveAppliedIndex advances the applied index without applying anything. It
-// exists for indexes raft never routes to an FSM (no-ops, barriers).
+// exists for indexes raft never routes to an FSM (no-ops, barriers), and the
+// caller must have established that the FSM goroutine is already past idx —
+// see Node.fenceAppliedIndex, which proves it with a raft barrier.
 func (f *FSM) ObserveAppliedIndex(idx uint64) { f.advanceApplied(idx) }
-
-// SetAppliedIndexSource wires the raft node whose applied index a blocked
-// waiter should poll, so WaitForAppliedIndex cannot hang on an index that will
-// never reach Apply. Passing nil disables polling.
-func (f *FSM) SetAppliedIndexSource(src AppliedIndexSource) {
-	f.idxMu.Lock()
-	f.idxSr = src
-	f.idxMu.Unlock()
-}
 
 // StoreConfiguration records the index of a committed configuration entry.
 // Implementing raft.ConfigurationStore keeps the applied index moving for
@@ -225,43 +204,30 @@ func (f *FSM) StoreConfiguration(index uint64, _ raft.Configuration) {
 // WaitForAppliedIndex blocks until AppliedIndex() >= idx, or until ctx is done.
 // It returns nil once the target is reached and ctx.Err() otherwise; it never
 // returns any other error, and it is safe for many concurrent waiters.
+//
+// Only entries raft routes to this FSM move the applied index, so a caller
+// passing a raw commit index can be waiting on an entry that will never arrive:
+// raft appends one no-op per leadership term and never hands it to an FSM.
+// Node.fenceAppliedIndex closes that gap on the leader. Note that
+// raft.Raft.AppliedIndex() is *not* a usable substitute — it reports the index
+// raft has enqueued onto its FSM channel, which runs ahead of what the FSM has
+// actually applied.
 func (f *FSM) WaitForAppliedIndex(ctx context.Context, idx uint64) error {
-	if f.applied.Load() >= idx {
-		return nil
-	}
-
-	var tick <-chan time.Time
-	f.idxMu.Lock()
-	hasSource := f.idxSr != nil
-	f.idxMu.Unlock()
-	if hasSource {
-		ticker := time.NewTicker(appliedIndexPollInterval)
-		defer ticker.Stop()
-		tick = ticker.C
-	}
-
 	for {
 		// Take the wakeup channel before re-checking so an advance between the
 		// check and the select cannot be missed: the channel is already closed.
 		f.idxMu.Lock()
-		ch, src := f.idxCh, f.idxSr
+		ch := f.idxCh
 		f.idxMu.Unlock()
 
 		if f.applied.Load() >= idx {
 			return nil
-		}
-		if src != nil {
-			f.advanceApplied(src.AppliedIndex())
-			if f.applied.Load() >= idx {
-				return nil
-			}
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ch:
-		case <-tick:
 		}
 	}
 }
