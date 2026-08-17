@@ -15,6 +15,11 @@ type SortedKV interface {
 	EstimatedSize() int
 	Iter() (SortedKVIter, error)
 	Seek(key []byte) (SortedKVIter, error)
+	// SeekToLast positions on the greatest key, or returns an invalid iterator
+	// when there is none. It is the descending counterpart of Seek: no byte
+	// string sorts above every possible key, so a reverse full scan cannot be
+	// expressed with Seek alone.
+	SeekToLast() (SortedKVIter, error)
 }
 
 type SortedKVIter interface {
@@ -443,6 +448,14 @@ func (file *SortedFile) Seek(key []byte) (SortedKVIter, error) {
 	}
 	iter := &SortedFileIter{file: file, pos: pos}
 	if err = iter.loadCurrent(); err != nil {
+		return nil, err
+	}
+	return iter, nil
+}
+
+func (file *SortedFile) SeekToLast() (SortedKVIter, error) {
+	iter := &SortedFileIter{file: file, pos: file.nkeys - 1}
+	if err := iter.loadCurrent(); err != nil {
 		return nil, err
 	}
 	return iter, nil

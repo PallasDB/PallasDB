@@ -26,6 +26,10 @@ func (arr *SortedArray) Seek(key []byte) (SortedKVIter, error) {
 	return &SortedArrayIter{keys: arr.keys, vals: arr.vals, deleted: arr.deleted, pos: pos}, nil
 }
 
+func (arr *SortedArray) SeekToLast() (SortedKVIter, error) {
+	return &SortedArrayIter{keys: arr.keys, vals: arr.vals, deleted: arr.deleted, pos: len(arr.keys) - 1}, nil
+}
+
 func (arr *SortedArray) getExact(key []byte) (val []byte, found bool, deleted bool, err error) {
 	idx, ok := slices.BinarySearchFunc(arr.keys, key, bytes.Compare)
 	if !ok {

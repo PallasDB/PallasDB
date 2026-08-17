@@ -46,6 +46,18 @@ func (m MergedSortedKV) Seek(key []byte) (iter SortedKVIter, err error) {
 	return &MergedSortedKVIter{levels, levelsLowest(levels)}, nil
 }
 
+func (m MergedSortedKV) SeekToLast() (iter SortedKVIter, err error) {
+	levels := make([]SortedKVIter, len(m))
+	for i, sub := range m {
+		if levels[i], err = sub.SeekToLast(); err != nil {
+			return nil, err
+		}
+	}
+	// Every level sits on its own greatest key; the winner is the greatest of
+	// those, which is exactly the state Prev expects.
+	return &MergedSortedKVIter{levels, levelsHighest(levels)}, nil
+}
+
 func (m MergedSortedKV) getExact(key []byte) (val []byte, found bool, deleted bool, err error) {
 	for _, sub := range m {
 		val, found, deleted, err = getExactFromSortedKV(sub, key)
