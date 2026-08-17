@@ -220,14 +220,24 @@ func (n *Node) waitForLeaderGRPCAddr(timeout time.Duration) string {
 	}
 }
 
-// removeServer drops nodeID from the configuration, refusing to empty it.
+// removeServer drops nodeID from the configuration, refusing to leave one that
+// cannot elect a leader.
 func (n *Node) removeServer(nodeID string) error {
 	servers, err := n.Configuration()
 	if err != nil {
 		return err
 	}
-	if _, ok := findServer(servers, nodeID); !ok {
+	server, ok := findServer(servers, nodeID)
+	if !ok {
 		return nil
+	}
+	// Raft already refuses a configuration change that would leave no voters
+	// (checkConfiguration), so this is not what keeps the cluster electable. It
+	// exists to fail before the round trip and to say which node and which rule
+	// stopped it: raft's own error dumps the whole configuration struct, which
+	// is not much use in an operator's log when `cluster leave` is rejected.
+	if server.Suffrage == raft.Voter && countVoters(servers) <= 1 {
+		return fmt.Errorf("cluster: refusing to remove %s, it is the last voter", nodeID)
 	}
 	if len(servers) <= 1 {
 		return fmt.Errorf("cluster: refusing to remove %s, it is the last server", nodeID)

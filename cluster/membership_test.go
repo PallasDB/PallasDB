@@ -189,3 +189,34 @@ func TestErrNotLeaderIsMatchable(t *testing.T) {
 	wrapped := errors.Join(errors.New("context"), ErrNotLeader)
 	require.ErrorIs(t, wrapped, ErrNotLeader)
 }
+
+// Removing the last voter is already impossible — raft's checkConfiguration
+// rejects any change leaving zero voters. What this covers is the diagnostic:
+// the refusal must name the node and the rule rather than dumping raft's
+// configuration struct, because this path is reached from `cluster leave` and
+// from gossip-driven eviction, where the message is all an operator sees.
+func TestRemoveServerRefusesTheLastVoterWithAClearError(t *testing.T) {
+	h := harnessNew(t)
+	leader := h.start("n1", func(c *Config) { c.Bootstrap = true })
+	h.waitLeader()
+
+	require.NoError(t, leader.Raft().AddNonvoter("n2", "n2", 0, leader.cfg.Timeout).Error())
+	require.NoError(t, leader.Raft().AddNonvoter("n3", "n3", 0, leader.cfg.Timeout).Error())
+
+	servers, err := leader.Configuration()
+	require.NoError(t, err)
+	require.Len(t, servers, 3, "a plain length check would not catch this")
+	require.Equal(t, 1, countVoters(servers))
+
+	err = leader.removeServer("n1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "last voter")
+	require.Contains(t, err.Error(), "n1")
+
+	// The voter is still there, and non-voters remain removable: the guard is
+	// about electability, not about configuration size.
+	after, err := leader.Configuration()
+	require.NoError(t, err)
+	require.Equal(t, 1, countVoters(after))
+	require.NoError(t, leader.removeServer("n3"))
+}
