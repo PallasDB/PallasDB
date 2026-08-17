@@ -90,6 +90,12 @@ where streaming is not worth the ceremony, and still requires a `Close`.
 `DBTX` has the same `Query`/`ExecStmt` pair, so a statement can run inside an
 existing transaction. `ParseStmt` exposes the parser on its own.
 
+`Close` is not bookkeeping. A `SELECT` you stop reading but never close holds a
+storage snapshot, which keeps superseded SSTables on disk; close it and the
+space is reclaimed at the next compaction. `LIMIT` makes stopping early cheap
+and therefore common, so this is the easy way to make a data directory that
+will not shrink.
+
 **From the CLI**, against a local directory or a remote server:
 
 ```sh
