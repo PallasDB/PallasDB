@@ -6,6 +6,7 @@ require (
 	github.com/armon/go-metrics v0.4.1
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/dgraph-io/ristretto/v2 v2.4.0
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/hashicorp/raft v1.7.3
 	github.com/hashicorp/raft-boltdb/v2 v2.3.1
 	github.com/hashicorp/serf v0.10.2
@@ -29,7 +30,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.2 // indirect
