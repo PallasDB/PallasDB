@@ -87,7 +87,7 @@ func evalExpr(schema *Schema, row Row, expr any) (*Cell, error) {
 		switch {
 		// string concat
 		case e.op == OP_ADD && out.Type == TypeStr:
-			if len(left.Str)+len(right.Str) > maxEntrySize {
+			if len(left.Str)+len(right.Str) > MaxEntrySize {
 				return nil, errors.New("string too large")
 			}
 			out.Str = slices.Concat(left.Str, right.Str)

@@ -287,7 +287,7 @@ func (file *SortedFile) index(pos int) (key []byte, val []byte, deleted bool, er
 	}
 	klen := binary.LittleEndian.Uint32(header[0:4])
 	vlen := binary.LittleEndian.Uint32(header[4:8])
-	if int64(klen)+int64(vlen) > maxEntrySize {
+	if int64(klen)+int64(vlen) > MaxEntrySize {
 		return nil, nil, false, errors.New("entry too large")
 	}
 	data := make([]byte, int(klen)+int(vlen))
@@ -310,7 +310,7 @@ func (file *SortedFile) valueAt(pos int) (val []byte, deleted bool, err error) {
 	}
 	klen := binary.LittleEndian.Uint32(header[0:4])
 	vlen := binary.LittleEndian.Uint32(header[4:8])
-	if int64(klen)+int64(vlen) > maxEntrySize {
+	if int64(klen)+int64(vlen) > MaxEntrySize {
 		return nil, false, errors.New("entry too large")
 	}
 
@@ -357,7 +357,7 @@ func (file *SortedFile) compareKeyAt(pos int, target []byte) (int, error) {
 	}
 	klen := binary.LittleEndian.Uint32(header[0:4])
 	vlen := binary.LittleEndian.Uint32(header[4:8])
-	if int64(klen)+int64(vlen) > maxEntrySize {
+	if int64(klen)+int64(vlen) > MaxEntrySize {
 		return 0, errors.New("entry too large")
 	}
 
