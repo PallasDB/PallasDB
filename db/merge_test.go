@@ -39,7 +39,7 @@ func testMerge(t *testing.T, alist ...[]string) {
 				continue
 			}
 			dup[key] = true
-			expected = append(expected, Entry{k[i], v[i], EntryAdd})
+			expected = append(expected, Entry{key: k[i], val: v[i], op: EntryAdd})
 		}
 	}
 
