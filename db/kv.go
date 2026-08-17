@@ -807,9 +807,41 @@ func (tx *KVTX) Seek(key []byte) (SortedKVIter, error) {
 	return filterDeleted(iter)
 }
 
+// SeekToLast returns an iterator positioned on the greatest live key visible to
+// the transaction, or an invalid iterator when there is none. Walk it with
+// Prev. It exists because Seek can only position at the first key >= k and no
+// byte string sorts above every possible key, so a descending scan with no
+// upper bound is otherwise inexpressible.
+//
+// The iterator reads through the transaction's snapshot like any other, so it
+// keeps the SSTables it captured alive and stops working once the transaction
+// is aborted or committed.
+func (tx *KVTX) SeekToLast() (SortedKVIter, error) {
+	if tx.err != nil {
+		return nil, tx.err
+	}
+	iter, err := tx.levels.SeekToLast()
+	if err != nil {
+		return nil, err
+	}
+	return filterDeletedBackward(iter)
+}
+
 func filterDeleted(iter SortedKVIter) (SortedKVIter, error) {
 	for iter.Valid() && iter.Deleted() {
 		if err := iter.Next(); err != nil {
+			return nil, err
+		}
+	}
+	return NoDeletedIter{iter}, nil
+}
+
+// filterDeletedBackward is filterDeleted for a descending walk: it steps back
+// over the tombstones at the end of the keyspace so the iterator starts on a
+// live key.
+func filterDeletedBackward(iter SortedKVIter) (SortedKVIter, error) {
+	for iter.Valid() && iter.Deleted() {
+		if err := iter.Prev(); err != nil {
 			return nil, err
 		}
 	}
