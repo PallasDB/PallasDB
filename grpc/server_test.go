@@ -424,9 +424,11 @@ func TestReflectionIsOptIn(t *testing.T) {
 	off := reflectpb.NewServerReflectionClient(dialOff(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	stream, err := off.ServerReflectionInfo(ctx)
 	require.NoError(t, err)
-	require.NoError(t, stream.Send(&reflectpb.ServerReflectionRequest{
+	// The server tears the stream down as soon as it sees an unknown service,
+	// so the Send may or may not win the race; Recv carries the real status.
+	_ = stream.Send(&reflectpb.ServerReflectionRequest{
 		MessageRequest: &reflectpb.ServerReflectionRequest_ListServices{},
-	}))
+	})
 	_, err = stream.Recv()
 	require.Equal(t, codes.Unimplemented, status.Code(err))
 
