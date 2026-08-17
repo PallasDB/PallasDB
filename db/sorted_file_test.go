@@ -225,5 +225,3 @@ func TestSortedFileBloomSkipsImpossiblePointLookup(t *testing.T) {
 	assert.False(t, deleted)
 	assert.Nil(t, val)
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

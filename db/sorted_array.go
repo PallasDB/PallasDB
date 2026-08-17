@@ -123,5 +123,3 @@ func (arr *SortedArray) Del(key []byte) (deleted bool, err error) {
 		return false, nil
 	}
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

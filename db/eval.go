@@ -204,5 +204,3 @@ func exprs2header(cols []any) []string {
 	}
 	return header
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

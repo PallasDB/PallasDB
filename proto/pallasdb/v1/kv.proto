@@ -11,8 +11,14 @@ service KVService {
   rpc Range(RangeRequest) returns (stream RangeResponse);
 }
 
+service SQLService {
+  // Query executes a single SQL statement and streams the result rows.
+  rpc Query(QueryRequest) returns (stream QueryResponse);
+}
+
 service ClusterService {
   rpc Join(JoinRequest) returns (JoinResponse);
+  rpc Leave(LeaveRequest) returns (LeaveResponse);
   rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
   rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
 }
@@ -24,8 +30,19 @@ enum PutMode {
   PUT_MODE_UPDATE = 3;
 }
 
+// Consistency selects the freshness guarantee for a read.
+enum Consistency {
+  // Defaults to CONSISTENCY_LINEARIZABLE.
+  CONSISTENCY_UNSPECIFIED = 0;
+  // Served by the leader after confirming leadership; no stale reads.
+  CONSISTENCY_LINEARIZABLE = 1;
+  // Served from the local FSM on any node; may be arbitrarily stale.
+  CONSISTENCY_STALE = 2;
+}
+
 message GetRequest {
   bytes key = 1;
+  Consistency consistency = 2;
 }
 
 message GetResponse {
@@ -51,9 +68,15 @@ message DeleteResponse {
 }
 
 message RangeRequest {
+  // An empty start scans from the first key; an empty stop scans to the last.
   bytes start = 1;
   bytes stop = 2;
   bool descending = 3;
+  // Maximum rows to stream. Zero means the server default.
+  uint64 limit = 4;
+  // Omit values and stream keys only.
+  bool keys_only = 5;
+  Consistency consistency = 6;
 }
 
 message RangeResponse {
@@ -61,12 +84,54 @@ message RangeResponse {
   bytes value = 2;
 }
 
+message QueryRequest {
+  string statement = 1;
+  Consistency consistency = 2;
+}
+
+message QueryResponse {
+  // Sent once, before any row, describing the projected columns.
+  repeated ColumnDescriptor columns = 1;
+  // A single result row; empty on the header message.
+  repeated Value values = 2;
+  // Rows affected by a non-SELECT statement; set on the final message.
+  uint64 rows_affected = 3;
+}
+
+message ColumnDescriptor {
+  string name = 1;
+  ValueType type = 2;
+}
+
+enum ValueType {
+  VALUE_TYPE_UNSPECIFIED = 0;
+  VALUE_TYPE_INT64 = 1;
+  VALUE_TYPE_STRING = 2;
+}
+
+message Value {
+  oneof value {
+    int64 int64_value = 1;
+    string string_value = 2;
+  }
+}
+
 message JoinRequest {
   string node_id = 1;
   string raft_addr = 2;
+  // Address clients use to reach this node's gRPC endpoint.
+  string grpc_addr = 3;
+  // Join as a non-voting replica; the leader promotes it once caught up.
+  bool non_voter = 4;
 }
 
 message JoinResponse {}
+
+message LeaveRequest {
+  string node_id = 1;
+}
+
+message LeaveResponse {}
 
 message ListMembersRequest {}
 
@@ -97,4 +162,6 @@ message GetLeaderRequest {}
 message GetLeaderResponse {
   string node_id = 1;
   string raft_addr = 2;
+  // Address clients should dial to reach the leader's gRPC endpoint.
+  string grpc_addr = 3;
 }

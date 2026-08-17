@@ -180,5 +180,3 @@ func TestRowEncodeDecodeAllTypes(t *testing.T) {
 		assert.Equal(t, row, decoded)
 	}
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

@@ -110,5 +110,3 @@ func (row Row) DecodeVal(schema *Schema, val []byte) (err error) {
 	}
 	return nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

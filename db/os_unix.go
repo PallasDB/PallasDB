@@ -30,5 +30,3 @@ func syncDir(file string) error {
 	defer func() { _ = syscall.Close(dirfd) }()
 	return syscall.Fsync(dirfd)
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

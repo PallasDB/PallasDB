@@ -85,5 +85,3 @@ func TestMetadataRecovery(t *testing.T) {
 	t.Run("bad_checksum", func(t *testing.T) { testMetadataRecovery(t, 0) })
 	t.Run("truncated", func(t *testing.T) { testMetadataRecovery(t, 1) })
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

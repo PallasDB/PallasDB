@@ -177,5 +177,3 @@ func TestCellEncodeValRoundTrip(t *testing.T) {
 	assert.Equal(t, []byte{0x99}, rest)
 	assert.Equal(t, c, dec)
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

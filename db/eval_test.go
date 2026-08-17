@@ -238,5 +238,3 @@ func TestExprs2Header(t *testing.T) {
 	header := exprs2header(exprs)
 	assert.Equal(t, []string{"col1", "0", "(a + b)"}, header)
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

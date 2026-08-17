@@ -563,5 +563,3 @@ func (p *Parser) parseNeg() (expr any, err error) {
 	}
 	return p.parseAtom()
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

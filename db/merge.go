@@ -127,5 +127,3 @@ func levelsHighest(levels []SortedKVIter) int {
 	}
 	return win
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/
