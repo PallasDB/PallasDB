@@ -33,9 +33,11 @@ type buildDetails struct {
 	Platform  string
 }
 
-// resolveBuildDetails prefers link-time stamps and falls back to the VCS
-// stamps the toolchain embeds in the build info.
-func resolveBuildDetails() buildDetails {
+// resolveBuildDetails prefers link-time stamps and falls back to the VCS stamps
+// the toolchain embeds in the build info. A nil info means the toolchain
+// embedded none, which is the case for `go run` and for builds made with
+// -buildvcs=false or from a git worktree.
+func resolveBuildDetails(info *debug.BuildInfo) buildDetails {
 	details := buildDetails{
 		Version:   version,
 		Commit:    commit,
@@ -44,7 +46,7 @@ func resolveBuildDetails() buildDetails {
 		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
-	if info, ok := debug.ReadBuildInfo(); ok {
+	if info != nil {
 		if details.Version == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
 			details.Version = info.Main.Version
 		}
@@ -63,6 +65,7 @@ func resolveBuildDetails() buildDetails {
 				dirty = setting.Value == "true"
 			}
 		}
+		// Only mark a recovered commit dirty: a stamped one names a release.
 		if dirty && commit == "" && details.Commit != "" {
 			details.Commit += "-dirty"
 		}
@@ -80,6 +83,14 @@ func resolveBuildDetails() buildDetails {
 	return details
 }
 
+// currentBuildDetails resolves the identity of the running binary.
+func currentBuildDetails() buildDetails {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return resolveBuildDetails(info)
+	}
+	return resolveBuildDetails(nil)
+}
+
 func newVersionCommand() *cobra.Command {
 	var short bool
 	cmd := &cobra.Command{
@@ -87,7 +98,7 @@ func newVersionCommand() *cobra.Command {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			details := resolveBuildDetails()
+			details := currentBuildDetails()
 			if short {
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), details.Version)
 				return err

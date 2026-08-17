@@ -608,3 +608,43 @@ func TestValueRendering(t *testing.T) {
 	require.Equal(t, int64(7), client.Value{Type: client.ValueTypeInt64, Int: 7}.Any())
 	require.Nil(t, client.Value{}.Any())
 }
+
+// A server bounds a scan by a deadline as well as a row count and reports the
+// former as an error mid-stream. Callers that must see the whole keyspace need
+// to tell that apart from a scan that genuinely failed.
+func TestPartialScanIsDistinguishableAndResumable(t *testing.T) {
+	stub := startStub(t)
+	stub.store = map[string]string{"a": "1", "b": "2", "c": "3"}
+	stub.rangeScript = func(stream grpc.ServerStreamingServer[pbv1.RangeResponse]) error {
+		if err := stream.Send(&pbv1.RangeResponse{Key: []byte("a"), Value: []byte("1")}); err != nil {
+			return err
+		}
+		return status.Error(codes.DeadlineExceeded, "range scan deadline exceeded")
+	}
+
+	c := dial(t, stub)
+	ctx := testContext(t)
+	var got []string
+	err := c.Range(ctx, client.RangeRequest{}, func(kv client.KeyValue) error {
+		got = append(got, string(kv.Key))
+		return nil
+	})
+	require.Error(t, err)
+	require.True(t, client.IsPartialScan(err), "a truncated scan must be recognisable")
+	require.Equal(t, []string{"a"}, got, "rows delivered before the cut stand")
+	// Resuming from the last key received completes the scan.
+	stub.rangeScript = nil
+	got = nil
+	require.NoError(t, c.Range(ctx, client.RangeRequest{Start: []byte("a")}, func(kv client.KeyValue) error {
+		got = append(got, string(kv.Key))
+		return nil
+	}))
+	require.Equal(t, []string{"a", "b", "c"}, got)
+}
+
+func TestIsPartialScanRejectsOtherFailures(t *testing.T) {
+	require.False(t, client.IsPartialScan(nil))
+	require.False(t, client.IsPartialScan(errors.New("boom")))
+	require.False(t, client.IsPartialScan(status.Error(codes.Unavailable, "not leader")))
+	require.True(t, client.IsPartialScan(status.Error(codes.DeadlineExceeded, "too slow")))
+}

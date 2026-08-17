@@ -31,6 +31,20 @@ type fakeServer struct {
 	// rangeCap truncates every scan, mimicking the server's row cap. 0 is
 	// uncapped.
 	rangeCap uint64
+	// deadlineAfter ends the FIRST scan with DeadlineExceeded once it has sent
+	// this many rows, mimicking the server's scan deadline elapsing mid-stream.
+	// 0 disables it.
+	deadlineAfter uint64
+	deadlineFired bool
+	// rangeErr fails every scan before a single row is sent.
+	rangeErr error
+}
+
+// firedDeadline reports whether a scan was cut short by the simulated deadline.
+func (f *fakeServer) firedDeadline() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deadlineFired
 }
 
 func startFakeServer(t *testing.T) *fakeServer {
@@ -127,7 +141,16 @@ func (f *fakeServer) Range(req *pbv1.RangeRequest, stream grpc.ServerStreamingSe
 	for key, value := range f.store {
 		values[key] = value
 	}
+	rowCap, deadlineAfter, rangeErr := f.rangeCap, f.deadlineAfter, f.rangeErr
+	if deadlineAfter > 0 && !f.deadlineFired {
+		f.deadlineFired = true
+	} else {
+		deadlineAfter = 0
+	}
 	f.mu.Unlock()
+	if rangeErr != nil {
+		return rangeErr
+	}
 
 	sort.Strings(keys)
 	if req.GetDescending() {
@@ -144,8 +167,8 @@ func (f *fakeServer) Range(req *pbv1.RangeRequest, stream grpc.ServerStreamingSe
 	// The real server caps a scan and truncates silently: the wire format has
 	// no "there is more" flag. Clients are expected to resume from the last key.
 	limit := req.GetLimit()
-	if f.rangeCap > 0 && (limit == 0 || limit > f.rangeCap) {
-		limit = f.rangeCap
+	if rowCap > 0 && (limit == 0 || limit > rowCap) {
+		limit = rowCap
 	}
 
 	// start is where the scan begins and stop where it ends, so a descending
@@ -165,6 +188,11 @@ func (f *fakeServer) Range(req *pbv1.RangeRequest, stream grpc.ServerStreamingSe
 		}
 		if limit > 0 && sent >= limit {
 			break
+		}
+		if deadlineAfter > 0 && sent >= deadlineAfter {
+			// The scan deadline elapsed mid-stream: rows already sent stand,
+			// and the client is expected to resume from the last one.
+			return status.Error(codes.DeadlineExceeded, "range scan deadline exceeded")
 		}
 		resp := &pbv1.RangeResponse{Key: []byte(key)}
 		if !req.GetKeysOnly() {
