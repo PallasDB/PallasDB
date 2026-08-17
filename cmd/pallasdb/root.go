@@ -14,12 +14,6 @@ import (
 
 const defaultShutdownTimeout = 15 * time.Second
 
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
-
 type rootOptions struct {
 	logFormat       string
 	shutdownTimeout time.Duration
@@ -39,7 +33,7 @@ func newRootCommand() *cobra.Command {
 			if err := config.load(cmd); err != nil {
 				return err
 			}
-			config.apply()
+			config.apply(cmd)
 			return nil
 		},
 	}
@@ -53,11 +47,16 @@ func newRootCommand() *cobra.Command {
 		opts.logFormat = v.GetString("log.format")
 		opts.shutdownTimeout = v.GetDuration("shutdown.timeout")
 	})
+	config.scope(cmd)
 
 	cmd.AddCommand(
-		newLocalCommand(opts, config),
-		newServeCommand(opts, config),
-		newClusterCommand(opts, config),
+		config.scope(newLocalCommand(opts, config)),
+		config.scope(newServeCommand(opts, config)),
+		config.scope(newClusterCommand(opts, config)),
+		config.scope(newKVCommand(config)),
+		config.scope(newSQLCommand(config)),
+		config.scope(newDumpCommand(config)),
+		config.scope(newRestoreCommand(config)),
 		newCompletionCommand(),
 		newVersionCommand(),
 	)
@@ -65,27 +64,37 @@ func newRootCommand() *cobra.Command {
 	return cmd
 }
 
-func newLogger(format string) (*slog.Logger, error) {
+// handlerKind is the validated form of the --log-format flag.
+type handlerKind int
+
+const (
+	handlerText handlerKind = iota
+	handlerJSON
+)
+
+// logHandlerKind validates a log format. It is called from config validation so
+// that a bad --log-format fails on every command, not just the ones that
+// happen to build a logger.
+func logHandlerKind(format string) (handlerKind, error) {
 	switch strings.ToLower(format) {
 	case "text":
-		return slog.New(slog.NewTextHandler(os.Stderr, nil)), nil
+		return handlerText, nil
 	case "json":
-		return slog.New(slog.NewJSONHandler(os.Stderr, nil)), nil
+		return handlerJSON, nil
 	default:
-		return nil, fmt.Errorf("unsupported log format %q", format)
+		return handlerText, fmt.Errorf("log.format: unsupported log format %q (want text or json)", format)
 	}
 }
 
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version information",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "pallasdb %s\ncommit: %s\nbuilt: %s\n", version, commit, date)
-			return err
-		},
+func newLogger(format string) (*slog.Logger, error) {
+	kind, err := logHandlerKind(format)
+	if err != nil {
+		return nil, err
 	}
+	if kind == handlerJSON {
+		return slog.New(slog.NewJSONHandler(os.Stderr, nil)), nil
+	}
+	return slog.New(slog.NewTextHandler(os.Stderr, nil)), nil
 }
 
 func requirePositiveDuration(name string, d time.Duration) error {
@@ -111,4 +120,13 @@ func requirePositiveInt(name string, n int) error {
 
 func joinErrors(errs ...error) error {
 	return errors.Join(errs...)
+}
+
+// flagChanged reports whether the user set a flag explicitly on the command
+// line. The remote commands (kv, sql, dump, restore) each carry their own
+// --addr/--timeout flags, and viper can bind only one flag per config key, so
+// their precedence over the config file is resolved here instead.
+func flagChanged(cmd *cobra.Command, name string) bool {
+	flag := cmd.Flags().Lookup(name)
+	return flag != nil && flag.Changed
 }
