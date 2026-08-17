@@ -7,26 +7,19 @@ import (
 	"github.com/teddymalhan/pallasdb/db"
 )
 
-// StatementParser turns SQL text into a db statement value.
-//
-// It is injected rather than called directly because the db package's parser
-// entry point is the one piece of the SQL surface the grpc package must not
-// guess at: db owns statement syntax, this package owns the wire.
-type StatementParser func(statement string) (any, error)
-
 // DBExecutor runs statements against a *db.DB.
 //
-// This file is the only place that touches db's SQL execution API. When db's
-// streaming cursor lands, dbCursor is the single type that changes; SQLServer
-// and the wire contract are unaffected.
+// This file is the only place that touches db's SQL execution API: db owns
+// statement syntax and result iteration, this package owns the wire. db.Query
+// parses and executes in one call and hands back a streaming cursor, so the
+// adaptation here is a direct pass-through.
 type DBExecutor struct {
-	db    *db.DB
-	parse StatementParser
+	db *db.DB
 }
 
-// NewDBExecutor binds a database and the parser used to interpret statements.
-func NewDBExecutor(database *db.DB, parse StatementParser) *DBExecutor {
-	return &DBExecutor{db: database, parse: parse}
+// NewDBExecutor binds the database statements execute against.
+func NewDBExecutor(database *db.DB) *DBExecutor {
+	return &DBExecutor{db: database}
 }
 
 // Query parses and executes statement.
@@ -34,73 +27,47 @@ func (e *DBExecutor) Query(_ context.Context, statement string) (SQLCursor, erro
 	if e.db == nil {
 		return nil, errors.New("no database configured")
 	}
-	if e.parse == nil {
-		return nil, errors.New("no statement parser configured")
-	}
-	parsed, err := e.parse(statement)
+	result, err := e.db.Query(statement)
 	if err != nil {
 		return nil, err
 	}
-	result, err := e.db.ExecStmt(parsed)
-	if err != nil {
-		return nil, err
-	}
-	return newDBCursor(result), nil
+	return &dbCursor{result: result}, nil
 }
 
-// dbCursor adapts db.SQLResult to SQLCursor.
+// dbCursor adapts *db.SQLResult to SQLCursor. db's cursor already has the
+// shape this package needs; only the column descriptor type differs.
 type dbCursor struct {
+	result  *db.SQLResult
 	columns []SQLColumn
-	rows    []db.Row
-	updated uint64
-	pos     int
+	mapped  bool
 }
 
-func newDBCursor(result db.SQLResult) *dbCursor {
-	cursor := &dbCursor{rows: result.Values, updated: uint64(max(result.Updated, 0)), pos: -1}
-	if len(result.Header) > 0 {
-		cursor.columns = make([]SQLColumn, len(result.Header))
-		for i, name := range result.Header {
-			cursor.columns[i] = SQLColumn{Name: name, Type: columnType(result.Values, i)}
-		}
+// Columns is memoised because SQLServer reads it once per statement while the
+// db cursor rebuilds the slice on each call.
+func (c *dbCursor) Columns() []SQLColumn {
+	if c.mapped {
+		return c.columns
 	}
-	return cursor
-}
-
-// columnType reports the type of column i. db reports header names only, so the
-// type is read off the first row; an empty result set leaves it unspecified.
-func columnType(rows []db.Row, i int) db.CellType {
-	if len(rows) == 0 || i >= len(rows[0]) {
-		return 0
-	}
-	return rows[0][i].Type
-}
-
-func (c *dbCursor) Columns() []SQLColumn { return c.columns }
-
-func (c *dbCursor) Next() bool {
-	if c.pos+1 >= len(c.rows) {
-		c.pos = len(c.rows)
-		return false
-	}
-	c.pos++
-	return true
-}
-
-func (c *dbCursor) Row() db.Row {
-	if c.pos < 0 || c.pos >= len(c.rows) {
+	c.mapped = true
+	desc := c.result.Columns()
+	if len(desc) == 0 {
 		return nil
 	}
-	return c.rows[c.pos]
+	c.columns = make([]SQLColumn, len(desc))
+	for i, d := range desc {
+		c.columns[i] = SQLColumn{Name: d.Name, Type: d.Type}
+	}
+	return c.columns
 }
 
-func (c *dbCursor) RowsAffected() uint64 { return c.updated }
+func (c *dbCursor) Next() bool { return c.result.Next() }
 
-func (c *dbCursor) Err() error { return nil }
+func (c *dbCursor) Row() db.Row { return c.result.Row() }
 
-// Close releases the cursor. The current db API materialises results before
-// returning, so there is no transaction left to release.
-func (c *dbCursor) Close() error {
-	c.rows, c.pos = nil, 0
-	return nil
-}
+func (c *dbCursor) RowsAffected() uint64 { return c.result.RowsAffected() }
+
+func (c *dbCursor) Err() error { return c.result.Err() }
+
+// Close releases the read transaction a SELECT holds open. It reports only that
+// release failing; why the query stopped stays on Err.
+func (c *dbCursor) Close() error { return c.result.Close() }
