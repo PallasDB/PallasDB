@@ -164,9 +164,16 @@ func (s *KVServer) Range(req *pbv1.RangeRequest, stream grpc.ServerStreamingServ
 	return ignoreClosedStream(newRangeScan(req, s.ranges).stream(tx, stream))
 }
 
+// validateKey rejects what no KV client may address. The reserved prefix holds
+// engine metadata such as table schemas: a remote client overwriting one would
+// corrupt every table built on it, so the network API refuses the whole
+// keyspace rather than trusting callers to stay out of it.
 func validateKey(key []byte) error {
 	if len(key) == 0 {
 		return status.Error(codes.InvalidArgument, "key is required")
+	}
+	if db.IsReservedKey(key) {
+		return status.Error(codes.InvalidArgument, "key is reserved for engine metadata")
 	}
 	return nil
 }

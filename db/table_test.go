@@ -385,7 +385,8 @@ func TestSchemaIsOutsideTheUserKeyspace(t *testing.T) {
 	execSQL(t, &db, "create table t (a int64, primary key (a));")
 
 	key := schemaKey("t")
-	assert.True(t, strings.HasPrefix(string(key), reservedKeyPrefix))
+	assert.True(t, strings.HasPrefix(string(key), ReservedKeyPrefix))
+	assert.True(t, IsReservedKey(key))
 	_, ok, err := db.KV.Get([]byte("@schema_t"))
 	require.NoError(t, err)
 	assert.False(t, ok, "the legacy user-writable schema key must be gone")
