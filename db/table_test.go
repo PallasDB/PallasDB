@@ -2,6 +2,8 @@ package db
 
 import (
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,6 +77,26 @@ func parseStmt(t *testing.T, s string) any {
 	return stmt
 }
 
+// execSQL runs one statement and returns how many rows it changed.
+func execSQL(t *testing.T, db *DB, s string) uint64 {
+	t.Helper()
+	r, err := db.ExecStmt(parseStmt(t, s))
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, r.Close()) }()
+	return r.RowsAffected()
+}
+
+// querySQL runs one SELECT and drains the cursor.
+func querySQL(t *testing.T, db *DB, s string) []Row {
+	t.Helper()
+	r, err := db.ExecStmt(parseStmt(t, s))
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, r.Close()) }()
+	rows, err := r.Rows()
+	require.NoError(t, err)
+	return rows
+}
+
 func TestSQLByPKey(t *testing.T) {
 	db := DB{}
 	dirpath := t.TempDir()
@@ -83,64 +105,41 @@ func TestSQLByPKey(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
-	s := "create table link (time int64, src string, dst string, primary key (src, dst));"
-	_, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
+	execSQL(t, &db, "create table link (time int64, src string, dst string, primary key (src, dst));")
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into link values (123, 'bob', 'alice');"))
 
-	s = "insert into link values (123, 'bob', 'alice');"
-	r, err := db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
-
-	s = "select time from link where dst = 'alice' and src = 'bob';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{Cell{Type: TypeI64, I64: 123}}}, r.Values)
+	s := "select time from link where dst = 'alice' and src = 'bob';"
+	require.Equal(t, []Row{{makeCell(123)}}, querySQL(t, &db, s))
 
 	s = "update link set time = 456 where dst = 'alice' and src = 'bob';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, s))
 
 	s = "select time from link where dst = 'alice' and src = 'bob';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{Cell{Type: TypeI64, I64: 456}}}, r.Values)
+	require.Equal(t, []Row{{makeCell(456)}}, querySQL(t, &db, s))
 
-	s = "insert into link values (123, 'cde', 'fgh');"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into link values (123, 'cde', 'fgh');"))
 
 	s = "select time from link where src >= 'b';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, querySQL(t, &db, s))
 
 	s = "select time from link where 'b' <= src;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, querySQL(t, &db, s))
 
 	s = "select time from link where src <= 'z';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(123)}, {makeCell(456)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(123)}, {makeCell(456)}}, querySQL(t, &db, s))
 
 	s = "select time from link where 'cde' > src;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(456)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(456)}}, querySQL(t, &db, s))
 
 	s = "select time from link where (src, dst) >= ('bob', 'alice');"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(456)}, {makeCell(123)}}, querySQL(t, &db, s))
 
 	s = "select time from link where (src, dst) >= ('bob', 'alicf');"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{{makeCell(123)}}, r.Values)
+	require.Equal(t, []Row{{makeCell(123)}}, querySQL(t, &db, s))
+
+	// no WHERE at all dumps the table
+	s = "select src, dst from link;"
+	require.Equal(t, []Row{makeRow("bob", "alice"), makeRow("cde", "fgh")}, querySQL(t, &db, s))
 
 	// reopen
 	err = db.Close()
@@ -151,14 +150,10 @@ func TestSQLByPKey(t *testing.T) {
 	require.Nil(t, err)
 
 	s = "delete from link where src = 'bob' and dst = 'alice';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, s))
 
 	s = "select time from link where dst = 'alice' and src = 'bob';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 0, len(r.Values))
+	require.Empty(t, querySQL(t, &db, s))
 }
 
 func TestIterByPKey(t *testing.T) {
@@ -191,6 +186,7 @@ func TestIterByPKey(t *testing.T) {
 	}
 
 	tx := db.NewTX()
+	defer tx.Abort()
 	for i := int64(-1); i < N+1; i++ {
 		row := Row{
 			Cell{Type: TypeI64, I64: i},
@@ -226,7 +222,6 @@ func TestIterByPKey(t *testing.T) {
 		expected := rangeQuery(sorted, i, j, desc)
 		require.Equal(t, expected, out)
 	}
-	tx.Abort()
 
 	for i := int64(-1); i < N+1; i++ {
 		for j := int64(-1); j < N+1; j++ {
@@ -312,14 +307,14 @@ func TestTableExpr(t *testing.T) {
 			primary key (d)
 		);
 	`
-	_, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
+	execSQL(t, &db, s)
 
 	schema, err := db.GetSchema("t")
 	require.Nil(t, err)
 	expected := Schema{
-		Table: "t",
-		Cols:  []Column{{"a", TypeI64}, {"b", TypeI64}, {"c", TypeStr}, {"d", TypeStr}},
+		Version: SchemaVersion,
+		Table:   "t",
+		Cols:    []Column{{"a", TypeI64}, {"b", TypeI64}, {"c", TypeStr}, {"d", TypeStr}},
 		Indices: [][]int{
 			{3},
 			{1, 3},
@@ -328,25 +323,78 @@ func TestTableExpr(t *testing.T) {
 	}
 	assert.Equal(t, expected, schema)
 
-	s = "insert into t values (1, 2, 'a', 'b');"
-	r, err := db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into t values (1, 2, 'a', 'b');"))
 
 	s = "select a * 4 - b, d + c from t where d = 'b';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(2, "ba")}, r.Values)
+	require.Equal(t, []Row{makeRow(2, "ba")}, querySQL(t, &db, s))
 
 	s = "update t set a = a - b, b = a, c = d + c where d = 'b';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, 1, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, s))
 
 	s = "select a, b, c, d from t where d = 'b';"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(-1, 1, "ba", "b")}, r.Values)
+	require.Equal(t, []Row{makeRow(-1, 1, "ba", "b")}, querySQL(t, &db, s))
+
+	// SELECT * expands to the declared columns, in order.
+	r, err := db.ExecStmt(parseStmt(t, "select * from t;"))
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, r.Close()) }()
+	assert.Equal(t, []ColumnDesc{
+		{"a", TypeI64}, {"b", TypeI64}, {"c", TypeStr}, {"d", TypeStr},
+	}, r.Columns())
+	rows, err := r.Rows()
+	require.NoError(t, err)
+	assert.Equal(t, []Row{makeRow(-1, 1, "ba", "b")}, rows)
+}
+
+func TestTableDropTable(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	execSQL(t, &db, "create table t (a int64, b int64, primary key (a), index (b));")
+	for i := 0; i < 5; i++ {
+		execSQL(t, &db, "insert into t values ("+strconv.Itoa(i)+", "+strconv.Itoa(i)+");")
+	}
+	require.Len(t, querySQL(t, &db, "select a from t;"), 5)
+
+	execSQL(t, &db, "drop table t;")
+	_, err = db.GetSchema("t")
+	assert.Error(t, err)
+
+	// every row and every index entry is gone, so the name can be reused
+	execSQL(t, &db, "create table t (a int64, b int64, primary key (a), index (b));")
+	assert.Empty(t, querySQL(t, &db, "select a from t;"))
+	assert.Empty(t, querySQL(t, &db, "select a from t where b >= 0;"))
+
+	// dropping an unknown table is an error, not a panic
+	_, err = db.ExecStmt(parseStmt(t, "drop table nope;"))
+	assert.Error(t, err)
+}
+
+// Schemas live behind a reserved key prefix that no table can name, so a raw KV
+// client cannot overwrite them by writing an ordinary looking key.
+func TestSchemaIsOutsideTheUserKeyspace(t *testing.T) {
+	db := DB{}
+	db.KV.Options.Dirpath = t.TempDir()
+	err := db.Open()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, db.Close()) })
+
+	execSQL(t, &db, "create table t (a int64, primary key (a));")
+
+	key := schemaKey("t")
+	assert.True(t, strings.HasPrefix(string(key), reservedKeyPrefix))
+	_, ok, err := db.KV.Get([]byte("@schema_t"))
+	require.NoError(t, err)
+	assert.False(t, ok, "the legacy user-writable schema key must be gone")
+
+	// a schema written with an unknown version is refused rather than misread
+	_, err = db.KV.Set(schemaKey("t2"), []byte(`{"Version":99,"Table":"t2"}`))
+	require.NoError(t, err)
+	_, err = db.GetSchema("t2")
+	assert.Error(t, err)
 }
 
 func TestTableIndices(t *testing.T) {
@@ -363,14 +411,14 @@ func TestTableIndices(t *testing.T) {
 			primary key (a)
 		);
 	`
-	_, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
+	execSQL(t, &db, s)
 
 	schema, err := db.GetSchema("t")
 	require.Nil(t, err)
 	expected := Schema{
-		Table: "t",
-		Cols:  []Column{{"a", TypeI64}, {"b", TypeI64}},
+		Version: SchemaVersion,
+		Table:   "t",
+		Cols:    []Column{{"a", TypeI64}, {"b", TypeI64}},
 		Indices: [][]int{
 			{0},
 			{1, 0},
@@ -378,70 +426,40 @@ func TestTableIndices(t *testing.T) {
 	}
 	assert.Equal(t, expected, schema)
 
-	s = "insert into t values (1, 2);"
-	r, err := db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 1, r.Updated)
-	s = "insert into t values (2, 2);"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 1, r.Updated)
-	s = "insert into t values (0, 3);"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 1, r.Updated)
-	s = "insert into t values (1, 2);"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 0, r.Updated)
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into t values (1, 2);"))
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into t values (2, 2);"))
+	require.Equal(t, uint64(1), execSQL(t, &db, "insert into t values (0, 3);"))
+	require.Equal(t, uint64(0), execSQL(t, &db, "insert into t values (1, 2);"))
 	// (1, 2), (2, 2), (0, 3)
 
 	s = "select a, b from t where a >= 0;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(0, 3), makeRow(1, 2), makeRow(2, 2)}, r.Values)
+	require.Equal(t, []Row{makeRow(0, 3), makeRow(1, 2), makeRow(2, 2)}, querySQL(t, &db, s))
 
 	s = "select a, b from t where b > 2;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(0, 3)}, r.Values)
+	require.Equal(t, []Row{makeRow(0, 3)}, querySQL(t, &db, s))
 
 	s = "select a, b from t where b >= 2;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(1, 2), makeRow(2, 2), makeRow(0, 3)}, r.Values)
+	require.Equal(t, []Row{makeRow(1, 2), makeRow(2, 2), makeRow(0, 3)}, querySQL(t, &db, s))
 
 	s = "update t set b = b - a where b < 3;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 2, r.Updated)
+	require.Equal(t, uint64(2), execSQL(t, &db, s))
 	// (1, 1), (2, 0), (0, 3)
 
 	s = "select a, b from t where a >= 0;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(0, 3), makeRow(1, 1), makeRow(2, 0)}, r.Values)
+	require.Equal(t, []Row{makeRow(0, 3), makeRow(1, 1), makeRow(2, 0)}, querySQL(t, &db, s))
 
 	s = "select a, b from t where b < 3;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(1, 1), makeRow(2, 0)}, r.Values)
+	require.Equal(t, []Row{makeRow(1, 1), makeRow(2, 0)}, querySQL(t, &db, s))
 
 	s = "delete from t where b >= 1;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
-	require.Equal(t, 2, r.Updated)
+	require.Equal(t, uint64(2), execSQL(t, &db, s))
 	// (2, 0)
 
 	s = "select a, b from t where a >= 0;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(2, 0)}, r.Values)
+	require.Equal(t, []Row{makeRow(2, 0)}, querySQL(t, &db, s))
 
 	s = "select a, b from t where b >= 0;"
-	r, err = db.ExecStmt(parseStmt(t, s))
-	require.Nil(t, err)
-	require.Equal(t, []Row{makeRow(2, 0)}, r.Values)
+	require.Equal(t, []Row{makeRow(2, 0)}, querySQL(t, &db, s))
 }
 
 func TestExecCreateTableErrors(t *testing.T) {
@@ -595,31 +613,49 @@ func TestAddPKeyToIndex(t *testing.T) {
 	assert.Equal(t, []int{0, 2, 1}, result)
 }
 
-func TestMatchAllEq(t *testing.T) {
+func TestMatchEq(t *testing.T) {
 	// simple equality
 	cond := &ExprBinOp{op: OP_EQ, left: "k", right: &Cell{Type: TypeI64, I64: 5}}
-	named, ok := matchAllEq(cond, nil)
+	named, ok := matchEq(cond)
 	assert.True(t, ok)
-	assert.Equal(t, []NamedCell{{"k", Cell{Type: TypeI64, I64: 5}}}, named)
+	assert.Equal(t, NamedCell{"k", Cell{Type: TypeI64, I64: 5}}, named)
 
-	// AND of equalities
-	cond2 := &ExprBinOp{op: OP_AND, left: cond, right: &ExprBinOp{
-		op: OP_EQ, left: "v", right: &Cell{Type: TypeStr, Str: []byte("x")},
-	}}
-	named, ok = matchAllEq(cond2, nil)
+	// reversed (value on the left, name on the right)
+	cond = &ExprBinOp{op: OP_EQ, left: &Cell{Type: TypeI64, I64: 5}, right: "k"}
+	named, ok = matchEq(cond)
 	assert.True(t, ok)
-	assert.Len(t, named, 2)
+	assert.Equal(t, NamedCell{"k", Cell{Type: TypeI64, I64: 5}}, named)
 
-	// non-equality op - fails
-	cond3 := &ExprBinOp{op: OP_LT, left: "k", right: &Cell{Type: TypeI64, I64: 5}}
-	_, ok = matchAllEq(cond3, nil)
+	// non-equality op, column on both sides, and a non-binop all fail
+	_, ok = matchEq(&ExprBinOp{op: OP_LT, left: "k", right: &Cell{Type: TypeI64, I64: 5}})
 	assert.False(t, ok)
+	_, ok = matchEq(&ExprBinOp{op: OP_EQ, left: "k", right: "v"})
+	assert.False(t, ok)
+	_, ok = matchEq("k")
+	assert.False(t, ok)
+}
 
-	// reversed (value on left, name on right)
-	cond4 := &ExprBinOp{op: OP_EQ, left: &Cell{Type: TypeI64, I64: 5}, right: "k"}
-	named, ok = matchAllEq(cond4, nil)
-	assert.True(t, ok)
-	assert.Equal(t, []NamedCell{{"k", Cell{Type: TypeI64, I64: 5}}}, named)
+func TestFlattenAnd(t *testing.T) {
+	a := &ExprBinOp{op: OP_EQ, left: "a", right: &Cell{Type: TypeI64, I64: 1}}
+	b := &ExprBinOp{op: OP_EQ, left: "b", right: &Cell{Type: TypeI64, I64: 2}}
+	c := &ExprBinOp{op: OP_EQ, left: "c", right: &Cell{Type: TypeI64, I64: 3}}
+
+	// left-deep and right-deep chains flatten in source order
+	assert.Equal(t, []any{a, b, c}, flattenAnd(&ExprBinOp{
+		op: OP_AND, left: &ExprBinOp{op: OP_AND, left: a, right: b}, right: c,
+	}))
+	assert.Equal(t, []any{a, b, c}, flattenAnd(&ExprBinOp{
+		op: OP_AND, left: a, right: &ExprBinOp{op: OP_AND, left: b, right: c},
+	}))
+	// a non-AND node is a single operand
+	assert.Equal(t, []any{a}, flattenAnd(a))
+
+	// a chain longer than the planner budget is truncated, never recursed
+	var deep any = a
+	for i := 0; i < 100000; i++ {
+		deep = &ExprBinOp{op: OP_AND, left: deep, right: b}
+	}
+	assert.LessOrEqual(t, len(flattenAnd(deep)), maxPlanConjuncts)
 }
 
 func TestAsNameListAndAsCellList(t *testing.T) {
@@ -765,21 +801,24 @@ func TestMatchRangeByIndexUsesBothBounds(t *testing.T) {
 	assert.Equal(t, int64(20), req.Stop[0].I64)
 }
 
-func TestSQLUnimplementedWhere(t *testing.T) {
+// A condition no index can answer used to be rejected outright; it is now a
+// scan plus a residual filter.
+func TestSQLFilterFallback(t *testing.T) {
 	db := DB{}
 	db.KV.Options.Dirpath = t.TempDir()
 	err := db.Open()
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
-	s := "create table t (a int64, b int64, primary key (a));"
-	_, err = db.ExecStmt(parseStmt(t, s))
-	require.NoError(t, err)
+	execSQL(t, &db, "create table t (a int64, b int64, primary key (a));")
+	for _, v := range []int{0, 1, 2, 3} {
+		execSQL(t, &db, "insert into t values ("+strconv.Itoa(v)+", "+strconv.Itoa(v*10)+");")
+	}
 
-	// WHERE clause that doesn't match any index pattern (expression on both sides)
-	s = "select a from t where a + 1 = b;"
-	_, err = db.ExecStmt(parseStmt(t, s))
-	assert.Error(t, err)
+	// an expression on both sides: full scan plus filter
+	assert.Empty(t, querySQL(t, &db, "select a from t where a + 1 = b;"))
+	assert.Equal(t, []Row{makeRow(0), makeRow(1), makeRow(2), makeRow(3)},
+		querySQL(t, &db, "select a from t where a * 10 = b;"))
 }
 
 func TestDBNewTXNestedNewTX(t *testing.T) {

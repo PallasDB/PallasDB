@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,6 +63,7 @@ func TestParseStmt(t *testing.T) {
 		table: "t",
 		cols:  []any{"a"},
 		cond:  &ExprBinOp{op: OP_EQ, left: "c", right: &Cell{Type: TypeI64, I64: 1}},
+		limit: -1,
 	}
 	testParseStmt(t, s, stmt)
 
@@ -73,6 +75,7 @@ func TestParseStmt(t *testing.T) {
 			left:  &ExprBinOp{op: OP_EQ, left: "c", right: &Cell{Type: TypeI64, I64: 1}},
 			right: &ExprBinOp{op: OP_EQ, left: "d", right: &Cell{Type: TypeStr, Str: []byte("e")}},
 		},
+		limit: -1,
 	}
 	testParseStmt(t, s, stmt)
 
@@ -243,8 +246,16 @@ func TestParseStmtErrors(t *testing.T) {
 		"create table t (a float64, primary key (a));",
 		// UPDATE: missing SET
 		"update t where a=1;",
-		// DELETE: missing WHERE
-		"delete from t;",
+		// UPDATE: missing assignment
+		"update t set where a=1;",
+		// SELECT: LIMIT without a count
+		"select a from t limit;",
+		// SELECT: negative LIMIT
+		"select a from t limit -1;",
+		// SELECT: OFFSET without a count
+		"select a from t limit 1 offset;",
+		// DROP TABLE: missing table name
+		"drop table;",
 	}
 	for _, s := range bad {
 		t.Run(s, func(t *testing.T) {
@@ -356,4 +367,141 @@ func TestParseIntEdgeCases(t *testing.T) {
 	err = p.parseInt(&c)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), c.I64)
+}
+
+// A pathological paren nest used to produce an uncatchable fatal stack
+// overflow, because the depth counter only guarded NOT and unary minus.
+func TestParseDeepNesting(t *testing.T) {
+	deep := func(n int, inner string) string {
+		return "select a from t where " + strings.Repeat("(", n) + inner + strings.Repeat(")", n) + ";"
+	}
+	_, err := ParseStmt(deep(100000, "1"))
+	assert.Error(t, err)
+
+	// just under the cap still parses
+	_, err = ParseStmt(deep(maxExprDepth-1, "1"))
+	assert.NoError(t, err)
+
+	// the same cap covers NOT and unary minus chains
+	_, err = ParseStmt("select a from t where " + strings.Repeat("not ", 100000) + "a;")
+	assert.Error(t, err)
+	_, err = ParseStmt("select a from t where " + strings.Repeat("-", 100000) + "1 = 1;")
+	assert.Error(t, err)
+
+	// the depth counter is released again, so a wide statement is fine
+	_, err = ParseStmt("select a from t where " + strings.Repeat("(1) + ", 5000) + "1 = 1;")
+	assert.NoError(t, err)
+}
+
+// parseBinop builds a left-deep tree, so a long flat chain is shallow to parse
+// but deep to walk. Both walkers must survive it.
+func TestEvalDeepChain(t *testing.T) {
+	schema := &Schema{
+		Version: SchemaVersion,
+		Table:   "t",
+		Cols:    []Column{{"a", TypeI64}},
+		Indices: [][]int{{0}},
+	}
+	row := makeRow(1)
+
+	p := NewParser(strings.Repeat("1+", 5000) + "1")
+	expr, err := p.parseExpr()
+	require.NoError(t, err)
+	require.True(t, p.isEnd())
+
+	_, err = evalExpr(schema, row, expr)
+	assert.Error(t, err)
+	assert.NotEmpty(t, expr2str(expr))
+
+	// a chain within the cap still evaluates
+	p = NewParser(strings.Repeat("1+", 10) + "1")
+	expr, err = p.parseExpr()
+	require.NoError(t, err)
+	cell, err := evalExpr(schema, row, expr)
+	require.NoError(t, err)
+	assert.Equal(t, int64(11), cell.I64)
+}
+
+// `SET a=1,b=2` used to be rejected: the comma was matched with tryKeyword,
+// which additionally requires a separator byte after it.
+func TestParseUpdateCommaWithoutSpace(t *testing.T) {
+	stmt, err := ParseStmt("update t set a=1,b=2 where c=3;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtUpdate{
+		table: "t",
+		value: []ExprAssign{
+			{"a", &Cell{Type: TypeI64, I64: 1}},
+			{"b", &Cell{Type: TypeI64, I64: 2}},
+		},
+		cond: &ExprBinOp{op: OP_EQ, left: "c", right: &Cell{Type: TypeI64, I64: 3}},
+	}, stmt)
+
+	// and the spaced spelling still works
+	_, err = ParseStmt("update t set a = 1 , b = 2 where c = 3;")
+	assert.NoError(t, err)
+}
+
+func TestParseOptionalWhere(t *testing.T) {
+	stmt, err := ParseStmt("select a from t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{table: "t", cols: []any{"a"}, limit: -1}, stmt)
+
+	stmt, err = ParseStmt("update t set a = 1;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtUpdate{
+		table: "t",
+		value: []ExprAssign{{"a", &Cell{Type: TypeI64, I64: 1}}},
+	}, stmt)
+
+	stmt, err = ParseStmt("delete from t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtDelete{table: "t"}, stmt)
+}
+
+func TestParseStar(t *testing.T) {
+	stmt, err := ParseStmt("select * from t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{table: "t", cols: []any{&ExprStar{}}, limit: -1}, stmt)
+
+	stmt, err = ParseStmt("select *, a from t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{table: "t", cols: []any{&ExprStar{}, "a"}, limit: -1}, stmt)
+
+	// `*` is still multiplication everywhere else
+	stmt, err = ParseStmt("select a * 2 from t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{
+		table: "t",
+		cols:  []any{&ExprBinOp{op: OP_MUL, left: "a", right: &Cell{Type: TypeI64, I64: 2}}},
+		limit: -1,
+	}, stmt)
+}
+
+func TestParseLimitOffset(t *testing.T) {
+	stmt, err := ParseStmt("select a from t limit 5;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{table: "t", cols: []any{"a"}, limit: 5}, stmt)
+
+	stmt, err = ParseStmt("select a from t where a = 1 limit 5 offset 2;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtSelect{
+		table:  "t",
+		cols:   []any{"a"},
+		cond:   &ExprBinOp{op: OP_EQ, left: "a", right: &Cell{Type: TypeI64, I64: 1}},
+		limit:  5,
+		offset: 2,
+	}, stmt)
+}
+
+func TestParseDropTable(t *testing.T) {
+	stmt, err := ParseStmt("drop table t;")
+	require.NoError(t, err)
+	assert.Equal(t, &StmtDropTable{table: "t"}, stmt)
+}
+
+func TestParseStmtRejectsTrailingGarbage(t *testing.T) {
+	_, err := ParseStmt("select a from t; select a from t;")
+	assert.Error(t, err)
+	_, err = ParseStmt("select a from t; ")
+	assert.NoError(t, err)
 }
