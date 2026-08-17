@@ -9,6 +9,9 @@ type Config struct {
 	SerfAdvertiseAddr string
 	JoinAddrs         []string
 	EventBuffer       int
+	// EncryptKey is the memberlist gossip encryption key. It must be 16, 24,
+	// or 32 bytes; nil leaves gossip in plaintext.
+	EncryptKey []byte
 }
 
 // MemberStatus is the discovery-layer status of a node.
