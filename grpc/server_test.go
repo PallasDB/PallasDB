@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -461,4 +462,23 @@ func TestMessageSizeLimits(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.Get(ctx, &pbv1.GetRequest{Key: []byte("big")})
 	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
+
+// The constructors take PallasDB options and raw grpc.ServerOption values in
+// one list; the CLI passes the latter today.
+func TestMixedOptionLists(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client, _ := newTestClient(t,
+		grpc.ChainUnaryInterceptor(LoggingUnaryInterceptor(logger)),
+		WithLogger(logger),
+		WithReflection(),
+	)
+	ctx := testContext(t)
+
+	_, err := client.Put(ctx, &pbv1.PutRequest{Key: []byte("k"), Value: []byte("v")})
+	require.NoError(t, err)
+
+	resp, err := client.Get(ctx, &pbv1.GetRequest{Key: []byte("k")})
+	require.NoError(t, err)
+	require.Equal(t, []byte("v"), resp.GetValue())
 }
