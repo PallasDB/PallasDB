@@ -2,18 +2,29 @@
 
 [`db`](../db/) contains the embedded storage engine and higher-level table database used by the [`pallasdb` CLI](../cmd/pallasdb/), [`grpc`](../grpc/) server, and [`cluster`](../cluster/) FSM.
 
-Detailed docs: [Architecture Overview](https://pallasdb.github.io/docs/architecture.html), [Storage Engine](https://pallasdb.github.io/docs/storage/index.html), [Transactions](https://pallasdb.github.io/docs/transactions.html), [SQL Parser & Evaluator](https://pallasdb.github.io/docs/sql.html), and [Go API Reference](https://pallasdb.github.io/docs/go-api.html).
+In-repo docs: [Architecture](../docs/architecture.md), [Durability
+model](../docs/durability.md), and [SQL surface](../docs/sql.md).
 
 ## Features owned here
 
 - **Cells and rows**: binary encoding of typed values (`i64`, `str`) into byte slices.
-- **Write-ahead log**: crash-safe persistence with fsync and CRC32 checksums.
+- **Write-ahead log**: sequence-numbered, CRC32-checksummed records, fsynced
+  before a write is acknowledged. The containing directory is also fsynced on
+  unix; on other platforms it is not, and that gap is reported through
+  `DirSyncSupported` and `ErrDirSyncUnsupported` rather than assumed away. See
+  [Durability model](../docs/durability.md) for the precise guarantee.
 - **Sorted memtable**: in-memory sorted key-value store with binary search.
 - **SSTables**: persistent sorted string tables for durable storage.
 - **LSM merging**: multi-level merge iterators that unify sorted streams across levels.
 - **Metadata management**: double-buffered metadata files tracking SSTable versions.
 - **Transactions**: snapshots, staged writes, conflict detection, and range scans.
-- **SQL layer**: tokenizer, recursive-descent parser, row encoding, expression evaluation, and table operations.
+- **SQL layer**: tokenizer, recursive-descent parser, expression evaluation,
+  row encoding, and table operations for a small SQL dialect — `CREATE TABLE`,
+  `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, with `WHERE`,
+  `LIMIT`/`OFFSET`, and tuple comparisons. No joins, no aggregates, no
+  `ORDER BY`; see [SQL surface](../docs/sql.md). Reachable in-process through
+  `NewDB`/`ExecStmt`, from the CLI via `pallasdb sql`, and over the wire via
+  `SQLService.Query`.
 
 ## Local key-value API
 
@@ -50,5 +61,10 @@ _, err = kv.Set([]byte("hello"), []byte("world"))
 ## Verification
 
 ```sh
-go test ./db
+go test -race ./db          # engine, transactions, table layer, SQL parser
+go test -list '^Fuzz' ./db  # fuzz targets, run nightly by CI
 ```
+
+CI runs this package on Linux, macOS, and Windows: `os_unix.go` and
+`os_other.go` are selected by build tag, so a single-platform run silently skips
+one of them.
