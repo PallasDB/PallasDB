@@ -988,14 +988,13 @@ func (kv *KV) compactLog() error {
 	version := kv.version
 	frozen := kv.mem       // by-value copy: shares backing arrays with kv.mem
 	kv.mem = SortedArray{} // fresh backing arrays; frozen's are now immutable
-	kv.imm = &frozen
-	dropTombstones := len(kv.main) == 0
-	kv.mu.Unlock()
-
 	// The memtable invariant: the live memtable must share no backing array with
 	// a published snapshot, or later appends could overwrite entries a reader
 	// still references.
 	check(cap(kv.mem.keys) == 0 && cap(kv.mem.vals) == 0 && cap(kv.mem.deleted) == 0)
+	kv.imm = &frozen
+	dropTombstones := len(kv.main) == 0
+	kv.mu.Unlock()
 
 	sstable := sstableName(version)
 	filename := filepath.Join(kv.Options.Dirpath, sstable)
