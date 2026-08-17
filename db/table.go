@@ -746,5 +746,3 @@ func (tx *DBTX) execDelete(stmt *StmtDelete) (count int, err error) {
 	}
 	return count, nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

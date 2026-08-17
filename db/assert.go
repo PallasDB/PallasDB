@@ -5,5 +5,3 @@ func check(cond bool) {
 		panic("assertion failure")
 	}
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

@@ -112,5 +112,3 @@ func (cell *Cell) DecodeKey(data []byte) (rest []byte, err error) {
 		panic("unreachable")
 	}
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

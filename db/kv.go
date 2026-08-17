@@ -797,5 +797,3 @@ func (kv NoDeletedSortedKV) Iter() (iter SortedKVIter, err error) {
 	}
 	return NoDeletedIter{iter}, nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

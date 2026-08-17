@@ -813,5 +813,3 @@ func TestDBNewTXNestedNewTX(t *testing.T) {
 	assert.False(t, ok)
 	tx.Abort()
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

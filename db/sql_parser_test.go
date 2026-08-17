@@ -357,5 +357,3 @@ func TestParseIntEdgeCases(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), c.I64)
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

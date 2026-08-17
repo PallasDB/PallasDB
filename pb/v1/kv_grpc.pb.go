@@ -237,7 +237,113 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	SQLService_Query_FullMethodName = "/pallasdb.v1.SQLService/Query"
+)
+
+// SQLServiceClient is the client API for SQLService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type SQLServiceClient interface {
+	// Query executes a single SQL statement and streams the result rows.
+	Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[QueryResponse], error)
+}
+
+type sQLServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSQLServiceClient(cc grpc.ClientConnInterface) SQLServiceClient {
+	return &sQLServiceClient{cc}
+}
+
+func (c *sQLServiceClient) Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[QueryResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &SQLService_ServiceDesc.Streams[0], SQLService_Query_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[QueryRequest, QueryResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SQLService_QueryClient = grpc.ServerStreamingClient[QueryResponse]
+
+// SQLServiceServer is the server API for SQLService service.
+// All implementations should embed UnimplementedSQLServiceServer
+// for forward compatibility.
+type SQLServiceServer interface {
+	// Query executes a single SQL statement and streams the result rows.
+	Query(*QueryRequest, grpc.ServerStreamingServer[QueryResponse]) error
+}
+
+// UnimplementedSQLServiceServer should be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSQLServiceServer struct{}
+
+func (UnimplementedSQLServiceServer) Query(*QueryRequest, grpc.ServerStreamingServer[QueryResponse]) error {
+	return status.Error(codes.Unimplemented, "method Query not implemented")
+}
+func (UnimplementedSQLServiceServer) testEmbeddedByValue() {}
+
+// UnsafeSQLServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SQLServiceServer will
+// result in compilation errors.
+type UnsafeSQLServiceServer interface {
+	mustEmbedUnimplementedSQLServiceServer()
+}
+
+func RegisterSQLServiceServer(s grpc.ServiceRegistrar, srv SQLServiceServer) {
+	// If the following call panics, it indicates UnimplementedSQLServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SQLService_ServiceDesc, srv)
+}
+
+func _SQLService_Query_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(QueryRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SQLServiceServer).Query(m, &grpc.GenericServerStream[QueryRequest, QueryResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SQLService_QueryServer = grpc.ServerStreamingServer[QueryResponse]
+
+// SQLService_ServiceDesc is the grpc.ServiceDesc for SQLService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SQLService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "pallasdb.v1.SQLService",
+	HandlerType: (*SQLServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Query",
+			Handler:       _SQLService_Query_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "pallasdb/v1/kv.proto",
+}
+
+const (
 	ClusterService_Join_FullMethodName        = "/pallasdb.v1.ClusterService/Join"
+	ClusterService_Leave_FullMethodName       = "/pallasdb.v1.ClusterService/Leave"
 	ClusterService_ListMembers_FullMethodName = "/pallasdb.v1.ClusterService/ListMembers"
 	ClusterService_GetLeader_FullMethodName   = "/pallasdb.v1.ClusterService/GetLeader"
 )
@@ -247,6 +353,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ClusterServiceClient interface {
 	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
+	Leave(ctx context.Context, in *LeaveRequest, opts ...grpc.CallOption) (*LeaveResponse, error)
 	ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error)
 	GetLeader(ctx context.Context, in *GetLeaderRequest, opts ...grpc.CallOption) (*GetLeaderResponse, error)
 }
@@ -263,6 +370,16 @@ func (c *clusterServiceClient) Join(ctx context.Context, in *JoinRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JoinResponse)
 	err := c.cc.Invoke(ctx, ClusterService_Join_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clusterServiceClient) Leave(ctx context.Context, in *LeaveRequest, opts ...grpc.CallOption) (*LeaveResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LeaveResponse)
+	err := c.cc.Invoke(ctx, ClusterService_Leave_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +411,7 @@ func (c *clusterServiceClient) GetLeader(ctx context.Context, in *GetLeaderReque
 // for forward compatibility.
 type ClusterServiceServer interface {
 	Join(context.Context, *JoinRequest) (*JoinResponse, error)
+	Leave(context.Context, *LeaveRequest) (*LeaveResponse, error)
 	ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error)
 	GetLeader(context.Context, *GetLeaderRequest) (*GetLeaderResponse, error)
 }
@@ -307,6 +425,9 @@ type UnimplementedClusterServiceServer struct{}
 
 func (UnimplementedClusterServiceServer) Join(context.Context, *JoinRequest) (*JoinResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Join not implemented")
+}
+func (UnimplementedClusterServiceServer) Leave(context.Context, *LeaveRequest) (*LeaveResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Leave not implemented")
 }
 func (UnimplementedClusterServiceServer) ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
@@ -348,6 +469,24 @@ func _ClusterService_Join_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ClusterServiceServer).Join(ctx, req.(*JoinRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ClusterService_Leave_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).Leave(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_Leave_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).Leave(ctx, req.(*LeaveRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -398,6 +537,10 @@ var ClusterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Join",
 			Handler:    _ClusterService_Join_Handler,
+		},
+		{
+			MethodName: "Leave",
+			Handler:    _ClusterService_Leave_Handler,
 		},
 		{
 			MethodName: "ListMembers",

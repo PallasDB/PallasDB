@@ -277,5 +277,3 @@ func TestMultiClosers(t *testing.T) {
 type errorCloser struct{ err error }
 
 func (e errorCloser) Close() error { return e.err }
-
-// QzBQWVJJOUhU https://trialofcode.org/

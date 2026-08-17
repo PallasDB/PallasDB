@@ -17,5 +17,3 @@ func (mc *MultiClosers) Close() (reterr error) {
 	*mc = nil
 	return reterr
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

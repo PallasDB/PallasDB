@@ -65,5 +65,3 @@ func (ent *Entry) Decode(r io.Reader) error {
 	ent.val = data[klen:]
 	return nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

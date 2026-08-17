@@ -94,5 +94,3 @@ func (rd *OffsetReader) Read(buf []byte) (n int, err error) {
 	rd.offset += int64(n)
 	return n, err
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

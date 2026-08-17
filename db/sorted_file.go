@@ -442,5 +442,3 @@ func (file *SortedFile) findPosExact(target []byte) (int, bool, error) {
 	}
 	return lo, false, nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/

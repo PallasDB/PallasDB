@@ -105,5 +105,3 @@ func (meta *KVMetaStore) Set(data KVMetaData) error {
 	meta.slots[1-cur].data = data
 	return nil
 }
-
-// QzBQWVJJOUhU https://trialofcode.org/
