@@ -2,7 +2,9 @@
 
 [`cluster`](../cluster/) provides leader-backed replicated writes using [HashiCorp Raft](https://github.com/hashicorp/raft). Member discovery uses [Serf](https://github.com/hashicorp/serf) gossip through [`discovery/`](discovery/).
 
-Detailed docs: [Cluster & Raft](https://pallasdb.github.io/docs/cluster.html).
+In-repo docs: [Architecture](../docs/architecture.md) covers the replication
+model; [Durability model](../docs/durability.md) covers what a committed write
+guarantees.
 
 ## Runtime model
 
@@ -70,5 +72,12 @@ go run ./cmd/pallasdb cluster start \
 ## Verification
 
 ```sh
-go test ./cluster ./cluster/discovery ./cmd/pallasdb -run 'Cluster|Serf'
+go test -race ./cluster ./cluster/discovery
+go test ./cmd/pallasdb -run 'Cluster|Serf'
 ```
+
+The `cluster` tests cover FSM apply and snapshot/restore, membership lifecycle
+(bootstrap, non-voter promotion, leave, failure eviction), and node shutdown.
+`cluster/discovery` covers Serf membership events and metadata. The
+`cmd/pallasdb` filter covers cluster flag parsing and config loading, which is
+where a cluster is actually assembled from user input.

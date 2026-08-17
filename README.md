@@ -26,7 +26,15 @@ A key-value database in Go using LSM trees, SSTables, write-ahead logging, concu
 
 ## Background
 
-PallasDB is a small database engine built from first principles: raw byte encoding, crash-safe persistence, sorted string tables, multi-level merging, a SQL parser, expression evaluation, a gRPC API, and Raft-backed server mode.
+PallasDB is a small database engine built from first principles: raw byte
+encoding, a write-ahead log, sorted string tables, multi-level merging,
+transactions, a table layer with a small SQL dialect, a gRPC API, and
+Raft-backed replication.
+
+"Small SQL dialect" is meant literally — `CREATE TABLE`, `INSERT`, `SELECT`,
+`UPDATE`, `DELETE`, `DROP TABLE`, with `WHERE`, `LIMIT`/`OFFSET`, and tuple
+comparisons for index range scans. No joins, no aggregates, no `ORDER BY`. The
+full surface is in [`docs/sql.md`](docs/sql.md).
 
 ## Quick start
 
@@ -35,27 +43,48 @@ Requires Go 1.25 or later.
 ```sh
 git clone https://github.com/teddymalhan/pallasdb.git
 cd pallasdb
-go mod download
-go build -o pallasdb ./cmd/pallasdb
-./pallasdb --help
+make build
+./bin/pallasdb --help
 ```
 
-Run tests before submitting changes:
+Or pull the container image:
 
 ```sh
-go test ./...
+docker run --rm -v pallasdb-data:/data -p 50051:50051 \
+  ghcr.io/teddymalhan/pallasdb:latest
 ```
+
+[`docs/getting-started.md`](docs/getting-started.md) walks through a local data
+directory, a server, SQL, and a cluster.
+
+`make` lists every target. Before submitting changes:
+
+```sh
+make check    # lint + race tests: what CI gates on
+```
+
+## Documentation
+
+Documentation lives in this repository, next to the code it describes, so it is
+reviewed with the change that makes it true.
+
+| Page | Covers |
+|---|---|
+| [Getting started](docs/getting-started.md) | Install, first statements, first cluster |
+| [Architecture](docs/architecture.md) | How the layers stack and where a request goes |
+| [SQL surface](docs/sql.md) | The SQL subset PallasDB implements, and what it does not |
+| [Durability model](docs/durability.md) | What survives a crash, and what differs per platform |
 
 ## Repository map
 
-| Area | README | Detailed docs |
-|---|---|---|
-| CLI, configuration, local commands | [`cmd/pallasdb/`](cmd/pallasdb/) | [Getting Started](https://pallasdb.github.io/docs/getting-started.html) |
-| Storage engine, SQL layer, Go API | [`db/`](db/) | [Storage Engine](https://pallasdb.github.io/docs/storage/index.html) and [Go API](https://pallasdb.github.io/docs/go-api.html) |
-| gRPC server implementation | [`grpc/`](grpc/) | [gRPC API](https://pallasdb.github.io/docs/grpc-api.html) |
-| Raft cluster and Serf discovery | [`cluster/`](cluster/) | [Cluster & Raft](https://pallasdb.github.io/docs/cluster.html) |
-| Protobuf definitions and code generation | [`proto/`](proto/) | [gRPC API](https://pallasdb.github.io/docs/grpc-api.html) |
-| Benchmark artifacts and commands | [`benchmarks/`](benchmarks/) | [Benchmarks](https://pallasdb.github.io/docs/benchmarks.html) |
+| Area | README |
+|---|---|
+| CLI, configuration, local commands | [`cmd/pallasdb/`](cmd/pallasdb/README.md) |
+| Storage engine, SQL layer, Go API | [`db/`](db/README.md) |
+| gRPC server implementation | [`grpc/`](grpc/README.md) |
+| Raft cluster and Serf discovery | [`cluster/`](cluster/README.md) |
+| Protobuf definitions and code generation | [`proto/`](proto/README.md) |
+| Benchmark artifacts and commands | [`benchmarks/`](benchmarks/README.md) |
 
 ## Maintainers
 
@@ -63,7 +92,11 @@ go test ./...
 
 ## Contributing
 
-Questions and feedback are welcome via [GitHub Issues](https://github.com/teddymalhan/pallasdb/issues). Start with [`cmd/pallasdb/README.md`](cmd/pallasdb/README.md) for local setup and CLI usage.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the toolchain, the `make` targets,
+what CI enforces, and the release process. Questions and feedback are welcome
+via [GitHub Issues](https://github.com/teddymalhan/pallasdb/issues).
+
+Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 

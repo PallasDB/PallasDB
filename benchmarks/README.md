@@ -2,7 +2,9 @@
 
 [`benchmarks`](../benchmarks/) stores the checked-in benchmark plan, raw results, and optimization notes for PallasDB's local disk-backed store.
 
-Detailed docs: [Benchmarks](https://pallasdb.github.io/docs/benchmarks.html).
+In-repo docs: [Architecture](../docs/architecture.md) explains the storage
+layers these numbers exercise. Run `make bench` for Go microbenchmarks; the
+commands below drive the CLI benchmark runner against real disk.
 
 ## Artifacts
 
