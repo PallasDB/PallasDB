@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io/fs"
 	"os"
+	"sync/atomic"
 
 	"github.com/bits-and-blooms/bloom/v3"
 )
@@ -13,6 +15,11 @@ type SortedKV interface {
 	EstimatedSize() int
 	Iter() (SortedKVIter, error)
 	Seek(key []byte) (SortedKVIter, error)
+	// SeekToLast positions on the greatest key, or returns an invalid iterator
+	// when there is none. It is the descending counterpart of Seek: no byte
+	// string sorts above every possible key, so a reverse full scan cannot be
+	// expressed with Seek alone.
+	SeekToLast() (SortedKVIter, error)
 }
 
 type SortedKVIter interface {
@@ -24,13 +31,54 @@ type SortedKVIter interface {
 	Prev() error
 }
 
+// SortedFile is an immutable on-disk sorted run (an SSTable). It owns a file
+// descriptor and is reference counted, because a compaction may retire a table
+// while transaction snapshots taken earlier are still reading it: see the
+// "SSTable lifetime" section on KV.
+//
+// A SortedFile must not be copied once it is in use; the atomic counters make
+// `go vet` enforce that.
 type SortedFile struct {
 	FileName    string
 	fp          *os.File
 	nkeys       int
 	offsetIndex []byte
 	bloom       *bloom.BloomFilter
+
+	// refs counts live users: one for the entry in KV.main plus one per
+	// transaction snapshot that captured the table. unlink records that
+	// compaction has retired it, so the last release also deletes the file.
+	refs   atomic.Int32
+	unlink atomic.Bool
 }
+
+// acquire registers one more user of the table. Callers must hold whatever lock
+// protects the container they read the pointer from (KV.mu for KV.main), so the
+// count cannot reach zero concurrently.
+func (file *SortedFile) acquire() { file.refs.Add(1) }
+
+// release drops one reference. The last release closes the descriptor and, if
+// the table has been retired, unlinks the file. A caller must have finished
+// every read through the table before releasing its own reference.
+func (file *SortedFile) release() error {
+	n := file.refs.Add(-1)
+	check(n >= 0)
+	if n > 0 {
+		return nil
+	}
+	err := file.Close()
+	if file.unlink.Load() {
+		rmErr := os.Remove(file.FileName)
+		if rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) && err == nil {
+			err = rmErr
+		}
+	}
+	return err
+}
+
+// retire marks the table obsolete. It is deleted from disk as soon as the last
+// reference to it goes away.
+func (file *SortedFile) retire() { file.unlink.Store(true) }
 
 func (file *SortedFile) Close() error {
 	if file.fp == nil {
@@ -400,6 +448,14 @@ func (file *SortedFile) Seek(key []byte) (SortedKVIter, error) {
 	}
 	iter := &SortedFileIter{file: file, pos: pos}
 	if err = iter.loadCurrent(); err != nil {
+		return nil, err
+	}
+	return iter, nil
+}
+
+func (file *SortedFile) SeekToLast() (SortedKVIter, error) {
+	iter := &SortedFileIter{file: file, pos: file.nkeys - 1}
+	if err := iter.loadCurrent(); err != nil {
 		return nil, err
 	}
 	return iter, nil
