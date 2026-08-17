@@ -167,14 +167,15 @@ func TestCrashBetweenSSTableAndMetadata(t *testing.T) {
 	}
 }
 
-// The same failure on a brand-new store leaves an orphan SSTable and no
-// metadata at all. Opening then has two possible readings -- "orphan from a
-// failed first flush, safe to start fresh" and "someone deleted the metadata of
-// a real database" -- and nothing on disk distinguishes them. The store refuses
-// rather than guess, because guessing wrong renumbers over live data. The cost
-// is that a first flush that fails needs an operator to remove one file; the
-// error names it.
-func TestFirstFlushMetadataFailureRefusesToOpen(t *testing.T) {
+// A failed first flush used to leave an orphan SSTable and no metadata, which
+// is genuinely ambiguous on the next Open -- "orphan from a failed first flush"
+// and "someone deleted the metadata of a real database" look identical on disk.
+// The flush now removes the SSTable it could not commit metadata for, so the
+// ambiguity never reaches disk: the directory is empty, the store opens, and
+// the data is still in the WAL. The refuse-to-open guard remains for the case
+// nothing can clean up after -- a crash between the SSTable fsync and the
+// metadata write -- and is covered by TestBothMetadataSlotsCorruptRefuseToOpen.
+func TestFirstFlushMetadataFailureLeavesNoOrphan(t *testing.T) {
 	dir := t.TempDir()
 	fs := withFaultFS(t, matchBase("meta0", "meta1"))
 	kv := openKV(t, dir)
@@ -187,15 +188,11 @@ func TestFirstFlushMetadataFailureRefusesToOpen(t *testing.T) {
 	require.True(t, fs.hasFired())
 	fs.disarm()
 	require.NoError(t, kv.Close())
-	require.Equal(t, 1, sstableCount(t, dir), "an orphan SSTable is on disk")
+	require.Equal(t, 0, sstableCount(t, dir),
+		"the flush must remove the SSTable whose metadata it could not commit")
 
-	broken := KV{}
-	broken.Options.Dirpath = dir
-	require.ErrorIs(t, broken.Open(), ErrMetaUnreadable)
-
-	// Once the orphan is gone the store opens and the WAL still holds the data:
-	// the failure was loud, not fatal.
-	require.NoError(t, os.Remove(filepath.Join(dir, "sstable_1")))
+	// No orphan, so nothing to disambiguate: the store opens and the WAL still
+	// holds the write. The failure was loud, not fatal, and needs no operator.
 	recovered := openKV(t, dir)
 	defer func() { assert.NoError(t, recovered.Close()) }()
 	requireValue(t, recovered, "a", "v-a")
