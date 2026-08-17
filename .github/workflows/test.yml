@@ -28,10 +28,10 @@ jobs:
           - "stable"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           cache: true
@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
