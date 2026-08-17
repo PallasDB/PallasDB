@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/teddymalhan/pallasdb/db"
 	grpcapi "github.com/teddymalhan/pallasdb/grpc"
-	"google.golang.org/grpc"
 )
 
 func kvOptsFromViper(v *viper.Viper) []db.KVOption {
@@ -56,12 +55,15 @@ func newServeGRPCCommand(root *rootOptions, config *configOptions) *cobra.Comman
 				return err
 			}
 
-			store, err := db.NewKV(opts.dataDir, kvOptsFromViper(config.viper)...)
+			// One owner for the engine: db.DB embeds the KV by value, so the
+			// server takes &database.KV rather than a second engine over the
+			// same directory, and Close happens exactly once.
+			database, err := db.NewDB(opts.dataDir, kvOptsFromViper(config.viper)...)
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
 			defer func() {
-				if err := store.Close(); err != nil {
+				if err := database.Close(); err != nil {
 					logger.Error("close database", "err", err)
 				}
 			}()
@@ -76,8 +78,10 @@ func newServeGRPCCommand(root *rootOptions, config *configOptions) *cobra.Comman
 			}
 
 			srv := grpcapi.NewGRPCServer(
-				store,
-				grpc.ChainUnaryInterceptor(grpcapi.LoggingUnaryInterceptor(logger)),
+				&database.KV,
+				grpcapi.WithLogger(logger),
+				grpcapi.WithSQL(grpcapi.NewDBExecutor(database)),
+				grpcapi.WithReflection(),
 			)
 
 			logger.Info("starting gRPC server", "addr", opts.addr, "data_dir", opts.dataDir)
