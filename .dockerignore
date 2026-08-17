@@ -1,0 +1,34 @@
+# Keep the build context small and the dependency layer stable.
+.git
+.github
+.vscode
+.agents
+.claude
+
+# Build/test output
+dist/
+bin/
+coverage.*
+*.out
+*.test
+*.coverprofile
+
+# Local data directories created by `pallasdb local`/`serve`/`cluster`
+data/
+raft/
+
+# Docs and artifacts that never affect the binary
+docs/
+benchmarks/
+*.md
+!README.md
+LICENSE
+skills-lock.json
+
+# Release engineering config, not build input
+Dockerfile
+.dockerignore
+.goreleaser.yaml
+codecov.yml
+.golangci.yml
+pallasdb.example.yaml
