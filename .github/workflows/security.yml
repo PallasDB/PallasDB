@@ -38,7 +38,17 @@ jobs:
       - name: Run gosec
         uses: securego/gosec@v2.26.1
         with:
-          args: -no-fail -fmt sarif -out gosec-results.sarif ./...
+          # No `-no-fail`: this job is blocking. Findings that are accepted
+          # rather than fixed live in .github/gosec.json, which annotates the
+          # reason for every excluded rule and every relaxed permission
+          # threshold. `-exclude-generated` skips pb/v1/*.pb.go.
+          args: >-
+            -conf .github/gosec.json
+            -exclude-generated
+            -fmt sarif
+            -out gosec-results.sarif
+            -stdout
+            ./...
 
       - name: Upload gosec results
         if: always()

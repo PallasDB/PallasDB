@@ -1,0 +1,104 @@
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Per-target fuzz duration (Go duration, e.g. 10m)"
+        required: false
+        default: "5m"
+
+# Deliberately not triggered by pull_request: fuzzing is unbounded work with
+# nondeterministic runtime and must never gate a PR. Failures here open an
+# issue-worthy signal, not a red check on someone's branch.
+
+permissions:
+  contents: read
+
+env:
+  FUZZ_PACKAGE: ./db
+  FUZZTIME: ${{ inputs.fuzztime || '5m' }}
+
+jobs:
+  discover:
+    name: Discover fuzz targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: List fuzz targets
+        id: list
+        run: |
+          set -euo pipefail
+          targets="$(go test -list '^Fuzz' "$FUZZ_PACKAGE" | grep -E '^Fuzz' || true)"
+          if [ -z "$targets" ]; then
+            echo "targets=[]" >>"$GITHUB_OUTPUT"
+            echo "count=0" >>"$GITHUB_OUTPUT"
+            echo "::notice title=No fuzz targets::No Fuzz* functions found in ${FUZZ_PACKAGE}. Nothing to fuzz; this is not a failure. Add e.g. FuzzParseStmt/FuzzExecStmt in db/ and this workflow picks them up automatically."
+            exit 0
+          fi
+          json="$(printf '%s\n' "$targets" | jq -R . | jq -c -s .)"
+          echo "targets=$json" >>"$GITHUB_OUTPUT"
+          echo "count=$(printf '%s\n' "$targets" | wc -l | tr -d ' ')" >>"$GITHUB_OUTPUT"
+          echo "Found fuzz targets: $json"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve fuzz cache dir
+        id: cache-dir
+        run: echo "dir=$(go env GOCACHE)/fuzz" >>"$GITHUB_OUTPUT"
+
+      - name: Restore generated fuzz corpus
+        # The interesting-input corpus Go builds up lives outside the repo, so
+        # without this every nightly run restarts from the seed corpus only.
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cache-dir.outputs.dir }}
+          key: fuzz-corpus-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Run ${{ matrix.target }}
+        run: |
+          go test "$FUZZ_PACKAGE" \
+            -run '^$' \
+            -fuzz "^${{ matrix.target }}$" \
+            -fuzztime "$FUZZTIME" \
+            -fuzzminimizetime 30s
+
+      - name: Upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers-${{ matrix.target }}
+          path: |
+            db/testdata/fuzz/**
+          if-no-files-found: warn
