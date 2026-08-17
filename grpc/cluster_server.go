@@ -77,9 +77,20 @@ func (s *ClusterManagementServer) Join(ctx context.Context, req *pbv1.JoinReques
 		return nil, notLeaderError(s.leader())
 	}
 	if err := s.join(req.GetNodeId(), req.GetRaftAddr(), req.GetGrpcAddr(), req.GetNonVoter()); err != nil {
-		return nil, raftStatusError("join cluster", err, s.leader())
+		return nil, membershipStatusError("join cluster", err, s.leader())
 	}
 	return &pbv1.JoinResponse{}, nil
+}
+
+// membershipStatusError maps a membership failure. A failure the Raft sentinels
+// do not explain, raised while no leader is known, is a leadership problem
+// rather than an internal one: there is nobody to route the change to, so the
+// client should retry rather than give up.
+func membershipStatusError(op string, err error, leader leaderInfo) error {
+	if !leader.known() && raftErrorCode(err) == codes.Internal {
+		return status.Errorf(codes.Unavailable, "%s: %v (no leader elected)", op, err)
+	}
+	return raftStatusError(op, err, leader)
 }
 
 // Leave removes a peer. An empty node_id means "remove me". Removing a node
@@ -97,8 +108,13 @@ func (s *ClusterManagementServer) Leave(ctx context.Context, req *pbv1.LeaveRequ
 			return &pbv1.LeaveResponse{}, nil
 		}
 	}
+	// Self-eviction is legitimate on a follower, and the node routes it to the
+	// leader itself; the raft fallback cannot, so it needs the leader here.
+	if !s.routesLeaveItself() && s.raft.State() != raft.Leader {
+		return nil, notLeaderError(s.leader())
+	}
 	if err := s.leave(req.GetNodeId()); err != nil {
-		return nil, raftStatusError("leave cluster", err, s.leader())
+		return nil, membershipStatusError("leave cluster", err, s.leader())
 	}
 	return &pbv1.LeaveResponse{}, nil
 }

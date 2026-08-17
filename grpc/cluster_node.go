@@ -100,6 +100,14 @@ func (c clusterNode) leave(nodeID string) error {
 	return c.raft.RemoveServer(raft.ServerID(nodeID), 0, c.timeout).Error()
 }
 
+// routesLeaveItself reports whether cluster.Node can route a membership
+// removal on its own. The raft fallback cannot: RemoveServer must run on the
+// leader.
+func (c clusterNode) routesLeaveItself() bool {
+	_, ok := any(c.node).(nodeLeaver)
+	return ok
+}
+
 // isMember reports whether nodeID appears in the committed configuration.
 func (c clusterNode) isMember(nodeID string) (bool, error) {
 	future := c.raft.GetConfiguration()

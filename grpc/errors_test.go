@@ -144,3 +144,26 @@ func TestApplyDeadlineHonoursClientContext(t *testing.T) {
 	defer cancelExpired()
 	require.Negative(t, node.applyDeadline(expired))
 }
+
+// A membership change that fails while the cluster has no leader is a
+// leadership problem, whatever sentinel the cluster package used to say so:
+// there is nobody to route the change to, so the client must retry, not stop.
+func TestMembershipStatusErrorWithoutLeader(t *testing.T) {
+	noLeader := errors.New("cluster: no leader elected")
+
+	err := membershipStatusError("leave cluster", noLeader, leaderInfo{})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "no leader elected")
+
+	// With a leader known, an unexplained failure stays Internal: the request
+	// reached the right node and genuinely failed there.
+	known := leaderInfo{ID: "node-2", GRPCAddr: "10.0.0.4:50051"}
+	require.Equal(t, codes.Internal, status.Code(membershipStatusError("leave cluster", errors.New("boom"), known)))
+
+	// Raft's own sentinels keep their mapping and their redirect either way.
+	lost := membershipStatusError("join cluster", raft.ErrLeadershipLost, known)
+	require.Equal(t, codes.Unavailable, status.Code(lost))
+	_, grpcAddr, ok := LeaderFromError(lost)
+	require.True(t, ok)
+	require.Equal(t, "10.0.0.4:50051", grpcAddr)
+}
