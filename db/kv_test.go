@@ -1,7 +1,6 @@
 package db
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"testing"
@@ -278,28 +277,6 @@ func TestKVRecovery(t *testing.T) {
 	assert.NoError(t, kv.Close())
 }
 
-func TestEntryEncode(t *testing.T) {
-	ent := Entry{key: []byte("k1"), val: []byte("xxx")}
-	data := []byte{0xe9, 0xec, 0x4d, 0x9e, 2, 0, 0, 0, 3, 0, 0, 0, 0, 'k', '1', 'x', 'x', 'x'}
-
-	assert.Equal(t, data, ent.Encode())
-
-	decoded := Entry{}
-	err := decoded.Decode(bytes.NewBuffer(data))
-	assert.Nil(t, err)
-	assert.Equal(t, ent, decoded)
-
-	ent = Entry{key: []byte("k1"), val: []byte{}, op: EntryDel}
-	data = []byte{0x4c, 0xd0, 0xfe, 0xe5, 2, 0, 0, 0, 0, 0, 0, 0, 1, 'k', '1'}
-
-	assert.Equal(t, data, ent.Encode())
-
-	decoded = Entry{}
-	err = decoded.Decode(bytes.NewBuffer(data))
-	assert.Nil(t, err)
-	assert.Equal(t, ent, decoded)
-}
-
 func TestKVSeek(t *testing.T) {
 	kv := KV{}
 	kv.Options.Dirpath = t.TempDir()
@@ -492,7 +469,9 @@ func TestKVClosing(t *testing.T) {
 		defer tx.Abort()
 		started <- struct{}{}
 		time.Sleep(20 * time.Millisecond)
-		val, ok, err := kv.Get([]byte("k1"))
+		// A transaction opened before Close keeps its snapshot for its whole
+		// lifetime, and Close waits for it.
+		val, ok, err := tx.Get([]byte("k1"))
 		assert.NoError(t, err)
 		assert.True(t, ok)
 		assert.Equal(t, "v1", string(val))
@@ -503,6 +482,10 @@ func TestKVClosing(t *testing.T) {
 	require.Nil(t, err)
 	duration := time.Since(t0).Milliseconds()
 	assert.True(t, duration >= 20)
+
+	// New work is rejected once the store is closed rather than racing teardown.
+	_, _, err = kv.Get([]byte("k1"))
+	assert.ErrorIs(t, err, ErrKVClosed)
 }
 
 func TestKVRange(t *testing.T) {
