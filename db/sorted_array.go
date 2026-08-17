@@ -74,8 +74,23 @@ func (iter *SortedArrayIter) Prev() error {
 	return nil
 }
 
+// Clear empties the array, releasing its backing arrays instead of reslicing
+// them to zero length. Reusing them would be a use-after-free for readers: a
+// SortedArray is published by value (see "the memtable invariant" on KV), so
+// snapshots hold slice headers over the same backing arrays and later Push
+// calls would overwrite entries they still reference.
 func (arr *SortedArray) Clear() {
-	arr.keys, arr.vals, arr.deleted = arr.keys[:0], arr.vals[:0], arr.deleted[:0]
+	arr.keys, arr.vals, arr.deleted = nil, nil, nil
+}
+
+// sharesBacking reports whether arr and other still address the same key
+// backing array, i.e. whether a by-value copy taken before a mutation is
+// aliased by the result. Used to assert the memtable invariant in O(1).
+func (arr *SortedArray) sharesBacking(other *SortedArray) bool {
+	if cap(arr.keys) == 0 || cap(other.keys) == 0 {
+		return false
+	}
+	return &arr.keys[:1][0] == &other.keys[:1][0]
 }
 
 func (arr *SortedArray) Push(key []byte, val []byte, deleted bool) {
