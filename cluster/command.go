@@ -60,6 +60,12 @@ var (
 	ErrTrailingCommandBytes = errors.New("cluster: trailing bytes after command")
 	// ErrEmptyBatch is returned when encoding a batch with no mutations.
 	ErrEmptyBatch = errors.New("cluster: batch command has no mutations")
+	// ErrUnsupportedCommandVersion is returned when the encoding version is one
+	// this binary does not implement, which means the leader is newer.
+	ErrUnsupportedCommandVersion = errors.New("cluster: unsupported command version")
+	// ErrUnknownCommandOp is returned when the op is one this binary does not
+	// implement, which likewise means the leader is newer.
+	ErrUnknownCommandOp = errors.New("cluster: unknown command op")
 )
 
 // Mutation is a single key mutation inside a command.
@@ -237,7 +243,7 @@ func decodeLegacyJSON(data []byte) (Command, error) {
 		return Command{}, fmt.Errorf("cluster: decode legacy command: %w", err)
 	}
 	if _, ok := opCode(cmd.Op); !ok {
-		return Command{}, fmt.Errorf("cluster: legacy command has unsupported op %q", cmd.Op)
+		return Command{}, fmt.Errorf("cluster: legacy command has unsupported op %q: %w", cmd.Op, ErrUnknownCommandOp)
 	}
 	return cmd, nil
 }
@@ -247,11 +253,11 @@ func decodeBinary(data []byte) (Command, error) {
 		return Command{}, errors.New("cluster: truncated command header")
 	}
 	if v := data[1]; v != CommandVersion {
-		return Command{}, fmt.Errorf("cluster: unsupported command version %d (want %d)", v, CommandVersion)
+		return Command{}, fmt.Errorf("%w %d (want %d)", ErrUnsupportedCommandVersion, v, CommandVersion)
 	}
 	op, ok := opFromCode(data[2])
 	if !ok {
-		return Command{}, fmt.Errorf("cluster: unknown command opcode %d", data[2])
+		return Command{}, fmt.Errorf("%w: opcode %d", ErrUnknownCommandOp, data[2])
 	}
 
 	rest := data[3:]

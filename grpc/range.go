@@ -117,9 +117,14 @@ func (r rangeScan) advance(iter db.SortedKVIter) error {
 	return iter.Next()
 }
 
-// stream sends the scan over the wire. The caller owns the transaction; the
-// scan is bounded by limit and maxDuration so a single stream cannot hold the
-// read transaction, and therefore the KV snapshot, open indefinitely.
+// stream sends the scan over the wire. The caller owns the transaction.
+//
+// limit and maxDuration bound the scan itself, but they are checked between
+// sends: a client that stops reading blocks this loop inside send, on gRPC
+// flow control, and holds the caller's read transaction — and therefore the KV
+// snapshot — until it resumes or the stream is torn down. Nothing here can
+// preempt that. On a cluster node the FSM tolerates it (see
+// cluster.FSM.lockForSwap), but it still pins retired SSTables.
 func (r rangeScan) stream(tx *db.KVTX, out grpc.ServerStreamingServer[pbv1.RangeResponse]) error {
 	iter, err := r.open(tx)
 	if err != nil {

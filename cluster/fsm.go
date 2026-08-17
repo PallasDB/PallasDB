@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/teddymalhan/pallasdb/db"
@@ -21,8 +22,21 @@ const (
 	oldDirSuffix     = ".old"
 )
 
+// How long Restore tries to take the store lock, and how often it retries. See
+// lockForSwap: the budget only has to outlast ordinary point reads, never a
+// streaming scan.
+const (
+	restoreQuiesceTimeout = 5 * time.Second
+	restoreQuiescePoll    = 2 * time.Millisecond
+)
+
 // ErrFSMClosed is returned by reads once the FSM has been closed.
 var ErrFSMClosed = errors.New("cluster: FSM is closed")
+
+// ErrRestoreBusy is returned when a snapshot install could not take the store
+// lock because a long-lived reader still holds it. Raft retries the install;
+// the node keeps applying and serving in the meantime.
+var ErrRestoreBusy = errors.New("cluster: restore deferred, store is in use by a long-running read")
 
 // FSMResult is returned from Apply so the gRPC caller can surface errors.
 //
@@ -50,6 +64,10 @@ type FSM struct {
 	// renameFn is a seam for tests to inject rename failures.
 	renameFn func(oldpath, newpath string) error
 
+	// Swap-lock budget, overridden by tests that need it to expire quickly.
+	quiesceTimeout time.Duration
+	quiescePoll    time.Duration
+
 	applied atomic.Uint64
 
 	idxMu sync.Mutex
@@ -58,11 +76,13 @@ type FSM struct {
 
 func NewFSM(store *db.KV, dirpath string, kvOpts ...db.KVOption) *FSM {
 	return &FSM{
-		store:    store,
-		dirpath:  dirpath,
-		kvOpts:   kvOpts,
-		renameFn: os.Rename,
-		idxCh:    make(chan struct{}),
+		store:          store,
+		dirpath:        dirpath,
+		kvOpts:         kvOpts,
+		renameFn:       os.Rename,
+		idxCh:          make(chan struct{}),
+		quiesceTimeout: restoreQuiesceTimeout,
+		quiescePoll:    restoreQuiescePoll,
 	}
 }
 
@@ -81,8 +101,32 @@ func (f *FSM) storeOptions() []db.KVOption {
 // diverge this state machine from the rest of the cluster, which is the exact
 // failure Raft exists to prevent; crashing lets the node recover by replaying
 // the log or installing a snapshot.
+//
+// Aborting stays the behaviour on purpose. The alternative — skipping the entry
+// and carrying on — silently forks this replica's data from the cluster's, and
+// no amount of operator tooling recovers from that after the fact.
 func fatal(format string, args ...any) {
 	panic("cluster: FSM cannot continue: " + fmt.Sprintf(format, args...))
+}
+
+// fatalUndecodable aborts on a committed entry this binary does not understand.
+//
+// Unlike an I/O error, this is deterministic: every replica running this binary
+// reaches the same conclusion, so a newer leader replicating a newer command
+// takes down every older replica at once, and each one re-reads the same entry
+// and aborts again on restart. The remedy is a binary upgrade rather than a
+// restart, so say so — the panic text is the only diagnostic an operator gets.
+func fatalUndecodable(index uint64, err error) {
+	switch {
+	case errors.Is(err, ErrUnsupportedCommandVersion), errors.Is(err, ErrUnknownCommandOp),
+		errors.Is(err, ErrUnknownCommandFormat):
+		fatal("raft entry %d was written by a newer PallasDB than this binary (%v). "+
+			"This is not a restart loop to wait out: upgrade this node to a build that "+
+			"understands the entry and it will replay from the log", index, err)
+	default:
+		fatal("decode raft entry %d: %v. The log or snapshot on this node is damaged; "+
+			"remove its data directory so it re-replicates from the leader", index, err)
+	}
 }
 
 // Apply is called by the Raft library after a log entry is committed.
@@ -94,7 +138,7 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 		// A committed entry this node cannot decode means a version mismatch
 		// with a newer leader or a corrupt log. Skipping it would leave this
 		// replica permanently behind with no detection.
-		fatal("decode raft entry %d: %v", log.Index, err)
+		fatalUndecodable(log.Index, err)
 	}
 
 	res := f.applyCommand(log.Index, cmd)
@@ -130,9 +174,10 @@ func (f *FSM) applyCommand(index uint64, cmd Command) *FSMResult {
 	case OpBatch:
 		return f.applyBatch(index, cmd.Batch)
 	default:
-		// An unknown op means a newer leader replicated something this binary
-		// does not understand. Ignoring it is the worst possible outcome.
-		fatal("raft entry %d: unknown op %q", index, cmd.Op)
+		// A decodable op this binary has no case for means the same thing an
+		// undecodable entry does: the leader is newer. Ignoring it is the worst
+		// possible outcome.
+		fatalUndecodable(index, fmt.Errorf("%w %q", ErrUnknownCommandOp, cmd.Op))
 		return nil
 	}
 }
@@ -304,9 +349,42 @@ func (f *FSM) Restore(rc io.ReadCloser) error {
 		return fmt.Errorf("close restore store: %w", err)
 	}
 
-	f.mu.Lock()
+	if !f.lockForSwap() {
+		_ = os.RemoveAll(restoreDir)
+		return ErrRestoreBusy
+	}
 	defer f.mu.Unlock()
 	return f.swapIn(restoreDir, oldDir)
+}
+
+// lockForSwap takes f.mu for writing without ever leaving a writer pending on
+// it, and reports whether it succeeded.
+//
+// A plain Lock would be correct but not safe to use here: Go's RWMutex blocks
+// new readers as soon as a writer is waiting, and one of those readers is
+// applyCommand. A single reader that holds the lock for a long time — NewTX
+// keeps it for a whole streaming Range, which a stalled client can extend
+// indefinitely — would therefore park the writer, and the parked writer would
+// freeze the apply loop behind it. The node would stop applying entirely while
+// the commit index kept moving, so every linearizable read against it would
+// block too.
+//
+// TryLock never parks, so readers and applyCommand keep running throughout.
+// Failing here is safe: raft retries the snapshot install, and the node goes on
+// serving and applying in the meantime. Short readers make this succeed almost
+// immediately; exhausting the budget means a genuinely long-lived reader, which
+// is exactly the case that must not be allowed to block apply.
+func (f *FSM) lockForSwap() bool {
+	deadline := time.Now().Add(f.quiesceTimeout)
+	for {
+		if f.mu.TryLock() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(f.quiescePoll)
+	}
 }
 
 // swapIn installs restoreDir as the live data directory. Callers must hold

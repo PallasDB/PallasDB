@@ -89,6 +89,22 @@ acquired the release, security, and CI machinery it was missing.
 
 ### Fixed
 
+- A snapshot install no longer freezes a node's apply loop. `Restore` took the
+  store lock for writing, and Go's `RWMutex` stops admitting readers as soon as
+  a writer waits — one of those readers being the apply path. A single
+  long-lived reader (a streaming `Range`, which a stalled client can hold open
+  indefinitely) therefore parked the restore, and the parked restore froze
+  applies entirely: the commit index kept moving, the applied index did not, and
+  every linearizable read against the node timed out. `Restore` now acquires
+  without ever parking a writer, and defers the install with `ErrRestoreBusy`
+  when a reader will not let go; Raft retries it while the node keeps applying
+  and serving.
+- A committed entry this binary cannot decode still aborts the node — skipping
+  it would fork the replica's data from the cluster's — but now says which of
+  the two causes it was. A newer command version, an unknown op or an
+  unrecognised format reports that the entry came from a newer PallasDB and
+  names the binary upgrade as the remedy, rather than looking like a restart
+  loop to wait out; a genuinely corrupt entry says so instead.
 - A linearizable read no longer stalls until the next write. Raft appends one
   no-op entry per leadership term and never routes it to an FSM, so the FSM's
   applied index could not reach the commit index it was waiting on: the first
