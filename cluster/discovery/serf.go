@@ -42,6 +42,9 @@ func NewSerfDiscovery(cfg Config) (*SerfDiscovery, error) {
 	if cfg.EventBuffer <= 0 {
 		cfg.EventBuffer = 64
 	}
+	if err := validateEncryptKey(cfg.EncryptKey); err != nil {
+		return nil, err
+	}
 	return &SerfDiscovery{
 		cfg:     cfg,
 		eventCh: make(chan serf.Event, cfg.EventBuffer),
@@ -56,6 +59,7 @@ func (d *SerfDiscovery) Start() error {
 	conf.EventCh = d.eventCh
 	conf.EventBuffer = d.cfg.EventBuffer
 	conf.LogOutput = io.Discard
+	conf.MemberlistConfig.LogOutput = io.Discard
 	conf.Tags = map[string]string{
 		serfTagService:  serviceName,
 		serfTagNodeID:   d.cfg.NodeID,
@@ -77,6 +81,10 @@ func (d *SerfDiscovery) Start() error {
 		}
 		conf.MemberlistConfig.AdvertiseAddr = advertiseHost
 		conf.MemberlistConfig.AdvertisePort = advertisePort
+	}
+
+	if len(d.cfg.EncryptKey) > 0 {
+		conf.MemberlistConfig.SecretKey = d.cfg.EncryptKey
 	}
 
 	s, err := serf.Create(conf)
@@ -122,7 +130,21 @@ func (d *SerfDiscovery) Members() []NodeInfo {
 	return infos
 }
 
-// Shutdown gracefully leaves and stops the Serf node.
+// Leave announces an intentional departure to the rest of the gossip pool, so
+// peers treat it as a graceful leave rather than a failure. Callers that want
+// the node to be considered temporarily gone should skip it and call Shutdown
+// on its own.
+func (d *SerfDiscovery) Leave() error {
+	d.mu.RLock()
+	s := d.serf
+	d.mu.RUnlock()
+	if s == nil {
+		return nil
+	}
+	return s.Leave()
+}
+
+// Shutdown stops the Serf node without announcing a departure.
 func (d *SerfDiscovery) Shutdown() error {
 	d.mu.RLock()
 	s := d.serf
@@ -130,13 +152,7 @@ func (d *SerfDiscovery) Shutdown() error {
 	if s == nil {
 		return nil
 	}
-
-	leaveErr := s.Leave()
-	shutdownErr := s.Shutdown()
-	if leaveErr != nil {
-		return leaveErr
-	}
-	return shutdownErr
+	return s.Shutdown()
 }
 
 func (d *SerfDiscovery) forwardEvents(s *serf.Serf) {
@@ -221,7 +237,7 @@ func normalizeMemberStatus(status serf.MemberStatus) MemberStatus {
 	}
 }
 
-func splitHostPort(addr string) (string, int, error) {
+func splitHostPort(addr string) (host string, port int, err error) {
 	host, portText, err := net.SplitHostPort(addr)
 	if err != nil {
 		return "", 0, err
@@ -229,7 +245,7 @@ func splitHostPort(addr string) (string, int, error) {
 	if host == "" {
 		host = "0.0.0.0"
 	}
-	port, err := strconv.Atoi(portText)
+	port, err = strconv.Atoi(portText)
 	if err != nil {
 		return "", 0, err
 	}
@@ -237,4 +253,14 @@ func splitHostPort(addr string) (string, int, error) {
 		return "", 0, fmt.Errorf("port %d out of range", port)
 	}
 	return host, port, nil
+}
+
+// validateEncryptKey rejects gossip keys memberlist's AES cipher cannot use.
+func validateEncryptKey(key []byte) error {
+	switch len(key) {
+	case 0, 16, 24, 32:
+		return nil
+	default:
+		return fmt.Errorf("serf encrypt key must be 16, 24, or 32 bytes, got %d", len(key))
+	}
 }
