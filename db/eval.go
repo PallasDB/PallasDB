@@ -48,6 +48,20 @@ func evalExprAt(schema *Schema, row Row, expr any, depth int) (*Cell, error) {
 			return nil, errors.New("bad unary op")
 		}
 	case *ExprBinOp:
+		// A tuple is not a value, but a comparison of two tuples is: compare
+		// element-wise, left to right, exactly as the index-prefix pushdown in
+		// makeRange does. Without this a tuple predicate the planner cannot
+		// turn into a key range has nowhere to go, so a legal query fails.
+		if isCmpOp(e.op) {
+			lt, lok := e.left.(*ExprTuple)
+			rt, rok := e.right.(*ExprTuple)
+			if lok || rok {
+				if !lok || !rok {
+					return nil, errors.New("cannot compare a tuple with a scalar")
+				}
+				return evalTupleCmp(schema, row, e.op, lt, rt, depth)
+			}
+		}
 		left, err := evalExprAt(schema, row, e.left, depth+1)
 		if err != nil {
 			return nil, err
@@ -135,6 +149,77 @@ func evalExprAt(schema *Schema, row Row, expr any, depth int) (*Cell, error) {
 	default:
 		return nil, errors.New("unsupported expression")
 	}
+}
+
+func isCmpOp(op ExprOp) bool {
+	switch op {
+	case OP_EQ, OP_NE, OP_LE, OP_GE, OP_LT, OP_GT:
+		return true
+	default:
+		return false
+	}
+}
+
+// evalTupleCmp compares two tuples lexicographically. Arity must match: a
+// comparison between tuples of different lengths has no meaning here, and
+// silently padding one side would answer a question nobody asked.
+func evalTupleCmp(schema *Schema, row Row, op ExprOp, left, right *ExprTuple, depth int) (*Cell, error) {
+	if len(left.kids) != len(right.kids) {
+		return nil, errors.New("tuple comparison arity mismatch")
+	}
+	r := 0
+	for i := range left.kids {
+		lc, err := evalExprAt(schema, row, left.kids[i], depth+1)
+		if err != nil {
+			return nil, err
+		}
+		rc, err := evalExprAt(schema, row, right.kids[i], depth+1)
+		if err != nil {
+			return nil, err
+		}
+		if lc.Type != rc.Type {
+			return nil, errors.New("binary op type mismatch")
+		}
+		switch lc.Type {
+		case TypeI64:
+			r = cmp.Compare(lc.I64, rc.I64)
+		case TypeStr:
+			r = bytes.Compare(lc.Str, rc.Str)
+		default:
+			return nil, errors.New("bad cell type")
+		}
+		if r != 0 {
+			break
+		}
+	}
+	return boolCell(cmpResult(op, r)), nil
+}
+
+func cmpResult(op ExprOp, r int) bool {
+	switch op {
+	case OP_EQ:
+		return r == 0
+	case OP_NE:
+		return r != 0
+	case OP_LE:
+		return r <= 0
+	case OP_GE:
+		return r >= 0
+	case OP_LT:
+		return r < 0
+	case OP_GT:
+		return r > 0
+	default:
+		return false
+	}
+}
+
+func boolCell(b bool) *Cell {
+	out := &Cell{Type: TypeI64}
+	if b {
+		out.I64 = 1
+	}
+	return out
 }
 
 func cell2str(cell *Cell) string {
