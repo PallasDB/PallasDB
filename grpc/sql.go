@@ -27,14 +27,18 @@ type SQLColumn struct {
 // transaction; why the query itself stopped is always on Err.
 type SQLCursor interface {
 	// Columns describes the projected columns and is valid before the first
-	// Next. It is empty for statements that do not project rows.
+	// Next, including for a SELECT that matches nothing. It is empty for a
+	// statement that projects no rows, which is the discriminator this package
+	// uses to decide whether a rows_affected trailer belongs on the wire.
 	Columns() []SQLColumn
 	// Next advances to the next row, returning false at end of results or on
 	// error.
 	Next() bool
-	// Row returns the current row. It is only valid until the next Next call.
+	// Row returns the current row. Its memory is reused, so it is valid only
+	// until the next Next call: encode it before advancing, or clone it.
 	Row() db.Row
-	// RowsAffected reports the mutation count of a non-SELECT statement.
+	// RowsAffected reports the mutation count of a non-SELECT statement and is
+	// zero for a SELECT.
 	RowsAffected() uint64
 	// Err reports why Next returned false, if it was not simply the end.
 	Err() error
