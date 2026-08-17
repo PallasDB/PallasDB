@@ -243,6 +243,18 @@ func (c *Client) RangeSlice(ctx context.Context, req RangeRequest) ([]KeyValue, 
 	return out, nil
 }
 
+// IsPartialScan reports whether err ended a [Client.Range] stream early
+// because the server stopped scanning, not because the scan failed. A server
+// bounds a scan by both a row count and a deadline and reports neither in the
+// stream, so a scan that must be complete has to be resumed from the last key
+// received until it stops producing new entries.
+//
+// A caller-side deadline or cancellation reaches the client as the same gRPC
+// code, so check ctx.Err() before treating an error as resumable.
+func IsPartialScan(err error) bool {
+	return err != nil && status.Code(err) == codes.DeadlineExceeded
+}
+
 // guard suppresses redirection once a stream has handed data to the caller.
 func guard(err error, delivered bool) error {
 	if delivered {

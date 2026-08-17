@@ -379,11 +379,14 @@ func dumpLocal(dataDir string, writer *dumpWriter) error {
 
 // dumpRemote streams the whole keyspace out of a server.
 //
-// A single Range call is not enough: the server caps how many rows one scan may
-// return and truncates silently, because the wire format has no "there is more"
-// flag. The scan is therefore resumed from the last key received — range bounds
-// are inclusive, so that key arrives again and is skipped — until a page adds
-// nothing new.
+// A single Range call is not enough. The server bounds every scan by a row
+// count and by a deadline, and the wire format has no "there is more" flag: a
+// scan either stops silently at the row cap or ends with DeadlineExceeded
+// partway through. Both are partial answers, so the scan is resumed from the
+// last key received — range bounds are inclusive, so that key arrives again and
+// is skipped — until a page adds nothing new. Stopping when a page returns
+// fewer rows than the cap would be wrong: a page that ends exactly on the cap
+// is indistinguishable from a page that ended because the keyspace did.
 func dumpRemote(cmd *cobra.Command, remote *remoteOptions, writer *dumpWriter) error {
 	consistency, err := remote.consistencyLevel()
 	if err != nil {
@@ -409,7 +412,15 @@ func dumpRemote(cmd *cobra.Command, remote *remoteOptions, writer *dumpWriter) e
 				lastKey = kv.Key
 				return nil
 			})
-			if err != nil {
+			switch {
+			case err == nil:
+			case added == 0:
+				// No progress, so resuming would spin on the same error.
+				return err
+			case ctx.Err() != nil:
+				// The caller gave up; this is not the server pausing the scan.
+				return err
+			case !client.IsPartialScan(err):
 				return err
 			}
 			if added == 0 {

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestKVCommandsAgainstRunningServer(t *testing.T) {
@@ -245,6 +247,42 @@ func TestDumpResumesPastTheServerRangeCap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "restored 10 keys\n", stdout)
 	require.Equal(t, want, target.snapshot())
+}
+
+// A scan can also end early with DeadlineExceeded partway through, which is a
+// partial answer rather than a failure: the rows already received stand.
+func TestDumpResumesAfterServerScanDeadline(t *testing.T) {
+	source := startFakeServer(t)
+	source.deadlineAfter = 4
+
+	want := make(map[string]string, 10)
+	for i := range 10 {
+		want["key-"+pad6(i)] = "value-" + pad6(i)
+	}
+	source.seed(want)
+	backup := filepath.Join(t.TempDir(), "backup.pallas")
+
+	_, stderr, err := executeCommand(t, "dump", "--addr", source.addr, "--output", backup)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "dumped 10 keys")
+	require.True(t, source.firedDeadline(), "the scan deadline path was never exercised")
+
+	target := startFakeServer(t)
+	_, _, err = executeCommand(t, "restore", "--addr", target.addr, "--input", backup)
+	require.NoError(t, err)
+	require.Equal(t, want, target.snapshot())
+}
+
+// A scan that fails before delivering anything is a real failure, not a page
+// boundary: resuming would spin on the same error forever.
+func TestDumpFailsWhenAScanDeliversNothing(t *testing.T) {
+	source := startFakeServer(t)
+	source.rangeErr = status.Error(codes.DeadlineExceeded, "range scan deadline exceeded")
+	source.seed(map[string]string{"a": "1"})
+
+	_, _, err := executeCommand(t, "dump", "--addr", source.addr, "--output", filepath.Join(t.TempDir(), "b"))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "deadline exceeded")
 }
 
 func TestDumpFromServerRestoreToLocalDirectory(t *testing.T) {

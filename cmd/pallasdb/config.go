@@ -74,6 +74,10 @@ type ClusterConfig struct {
 	LeaveOnShutdown    bool          `mapstructure:"leave_on_shutdown"`
 	FailureGracePeriod time.Duration `mapstructure:"failure_grace_period"`
 
+	// AutoCompact lets a cluster node compact in the background like the
+	// single-node path does.
+	AutoCompact bool `mapstructure:"auto_compact"`
+
 	Serf SerfConfig       `mapstructure:"serf"`
 	TLS  ClusterTLSConfig `mapstructure:"tls"`
 }

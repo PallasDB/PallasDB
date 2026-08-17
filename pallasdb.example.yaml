@@ -31,6 +31,8 @@ cluster:
   # How long a failed node may stay in the Raft configuration before it is
   # evicted. Negative disables eviction entirely.
   failure_grace_period: 30s
+  # Compact in the background, as a single-node server does.
+  auto_compact: true
   serf:
     enabled: true
     addr: ":7946"
