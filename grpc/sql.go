@@ -23,7 +23,8 @@ type SQLColumn struct {
 
 // SQLCursor streams the result of a single statement. Close is mandatory and
 // idempotent: for a SELECT the cursor holds a read transaction, and leaving it
-// open pins the KV snapshot.
+// open pins the KV snapshot. Close reports only the failure to release that
+// transaction; why the query itself stopped is always on Err.
 type SQLCursor interface {
 	// Columns describes the projected columns and is valid before the first
 	// Next. It is empty for statements that do not project rows.
