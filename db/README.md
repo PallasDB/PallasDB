@@ -50,6 +50,13 @@ _, err = kv.Set([]byte("hello"), []byte("world"))
 | `KV.NewTX()` | Open a transaction/snapshot. |
 | `KV.Compact()` | Run compaction once. |
 | `NewDB(path string, opts ...KVOption) (*DB, error)` | Open the higher-level table database API. |
+| `DB.Query(statement) (*SQLResult, error)` | Parse and execute one SQL statement. `DBTX` has the same method. |
+| `DB.ExecStmt(stmt) (*SQLResult, error)` | Execute an already-parsed statement from `ParseStmt`. |
+| `SQLResult.Columns() / Next() / Row() / Err()` | Stream a `SELECT`. `Close()` is mandatory — a `SELECT` holds a read transaction until then. |
+| `SQLResult.RowsAffected()` | Row count for `INSERT`/`UPDATE`/`DELETE`. |
+
+The SQL dialect and the full result-streaming contract are in
+[SQL surface](../docs/sql.md).
 
 ## Related folders
 
