@@ -2,7 +2,8 @@
 
 [`grpc`](../grpc/) exposes the [`db`](../db/) key-value store, the SQL layer, and [`cluster`](../cluster/) management operations over Protocol Buffers/gRPC.
 
-Detailed docs: [gRPC API](https://pallasdb.github.io/docs/grpc-api.html).
+In-repo docs: [Architecture](../docs/architecture.md) and [SQL
+surface](../docs/sql.md).
 
 ## Services
 
@@ -73,6 +74,12 @@ Both `NewGRPCServer(store, opts...)` and `NewClusterGRPCServer(node, applyTimeou
 - `SQLServer` talks to an `SQLExecutor`/`SQLCursor` pair so the `db` package never imports protobuf; `sql_db.go` is the only file that touches db's SQL execution API, and `cellValue`/`columnDescriptors` are the only `db.Cell` to `pbv1.Value` conversion.
 - A few `cluster.Node`/`cluster.FSM` accessors are probed through interfaces (`cluster_node.go`) so this package builds and behaves correctly whether or not the cluster-side accessors are present; each probe falls back to today's behaviour.
 - `Serve(ctx, lis, srv)` uses graceful shutdown before falling back to `Stop()`.
+- `SQLService.Query` streams one header message carrying `columns` and no
+  `values`, then one message per row carrying `values`, then — for non-`SELECT`
+  statements only — a final message carrying `rows_affected`.
+- Conversion between `db.Cell` and the wire `Value` type lives here, not in
+  `db`. The storage engine imports no gRPC or protobuf packages, which is what
+  keeps it usable as a plain Go library.
 
 ## Related folders
 
@@ -84,6 +91,8 @@ Both `NewGRPCServer(store, opts...)` and `NewClusterGRPCServer(node, applyTimeou
 
 ```sh
 go test -race ./grpc
-buf lint
-buf generate
+make proto            # buf lint + buf generate
+make proto-breaking   # buf breaking against main
 ```
+
+CI runs all three; see [`../CONTRIBUTING.md`](../CONTRIBUTING.md).

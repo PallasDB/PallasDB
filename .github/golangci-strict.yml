@@ -1,0 +1,78 @@
+# Staging config for the non-blocking `lint-strict` CI job.
+#
+# This is the linter set we want `.golangci.yml` to become. It is kept
+# separate, and its job is `continue-on-error: true`, until the findings it
+# reports are cleaned up package by package. When `lint-strict` reports zero
+# issues, fold the `linters.enable` list and `linters.settings` below into
+# `.golangci.yml`, delete this file, and delete the `lint-strict` job.
+#
+# See CONTRIBUTING.md ("Linting") for the promotion procedure.
+version: "2"
+
+run:
+  go: "1.25"
+
+linters:
+  enable:
+    # Already blocking in .golangci.yml.
+    - bodyclose
+    - misspell
+    - noctx
+    - revive
+    # Staged additions.
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - nilerr
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+    gosec:
+      excludes:
+        # G115 (integer overflow conversion) fires on nearly every binary
+        # encode/decode site in db/; tracked separately, not a real finding.
+        - G115
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      # Test files legitimately ignore errors and use weak randomness.
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

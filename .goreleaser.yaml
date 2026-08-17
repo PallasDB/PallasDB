@@ -1,0 +1,99 @@
+version: 2
+
+project_name: pallasdb
+
+before:
+  hooks:
+    - go mod download
+    - go mod verify
+
+builds:
+  - id: pallasdb
+    main: ./cmd/pallasdb
+    binary: pallasdb
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # cmd/pallasdb declares package-scope `version`, `commit` and `date` vars
+    # that `pallasdb version` prints. Nothing set them before this file
+    # existed, so every build reported the zero-value version.
+    #
+    # The symbol prefix is `main`, not the import path: the Go linker names
+    # the main package `main` regardless of where it lives, and it silently
+    # ignores -X for symbols it cannot resolve. Verified by building with
+    # both forms — only `main.version` took effect. Keep in sync with the
+    # Makefile's LDFLAGS and the Dockerfile's build stage.
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .FullCommit }}
+      - -X main.date={{ .CommitDate }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: pallasdb
+    ids:
+      - pallasdb
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+      - pallasdb.example.yaml
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "merge conflict"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other
+      order: 99
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Container image
+
+    ```sh
+    docker pull ghcr.io/teddymalhan/pallasdb:{{ .Tag }}
+    ```
+
+    See [CHANGELOG.md](https://github.com/teddymalhan/pallasdb/blob/main/CHANGELOG.md) for the curated history.

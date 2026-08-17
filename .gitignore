@@ -11,6 +11,11 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Build output (`make build`) and release artifacts (`make snapshot`, goreleaser)
+bin/
+dist/
+gosec-results.sarif
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*

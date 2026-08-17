@@ -19,3 +19,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The Dockerfile pins a golang base image; without this it silently ages out
+  # of security support while the Go toolchain in CI stays current.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "docker"]

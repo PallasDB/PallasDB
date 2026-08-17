@@ -10,13 +10,22 @@ permissions:
 
 jobs:
   test:
-    name: Test (Go ${{ matrix.go }})
-    runs-on: ubuntu-latest
+    # db/os_unix.go and db/os_other.go are selected by build tag, so a
+    # Linux-only matrix never compiles — let alone exercises — the !unix path.
+    # Windows covers os_other.go; macOS covers a second unix flavour of the
+    # directory-fsync path in os_unix.go.
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
         go:
           - "1.25"
+          - "stable"
 
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +42,9 @@ jobs:
           go mod download
 
       - name: Check go mod tidy
+        # Only on Linux: Windows runners check out with core.autocrlf=true, so
+        # `git diff` reports phantom changes there.
+        if: matrix.os == 'ubuntu-latest'
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
@@ -40,12 +52,24 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Run tests
+      - name: Run tests (race)
+        # -race needs cgo and a C toolchain, which is preinstalled on the
+        # Linux and macOS runners.
+        if: matrix.os != 'windows-latest'
         run: go test -v -race -shuffle=on -coverprofile=coverage.out ./...
 
+      - name: Run tests
+        # The Windows runner's C toolchain is not guaranteed, and the point of
+        # this leg is build-tag coverage of db/os_other.go, not race detection.
+        if: matrix.os == 'windows-latest'
+        run: go test -v -shuffle=on ./...
+
       - name: Upload coverage
-        if: matrix.go == '1.25'
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.out
-          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # A coverage report that silently fails to upload is a coverage gate
+          # that does not exist. See codecov.yml for the thresholds enforced.
+          fail_ci_if_error: true

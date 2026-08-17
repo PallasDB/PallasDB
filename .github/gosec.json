@@ -1,0 +1,75 @@
+{
+  "_README": [
+    "gosec configuration for the blocking `gosec` job in .github/workflows/security.yml.",
+    "",
+    "The job runs WITHOUT `-no-fail`: any finding not suppressed here fails CI.",
+    "Every suppression below is a reviewed decision, not a convenience. Keys",
+    "beginning with `_` are annotations; gosec ignores them.",
+    "",
+    "The job is also invoked with `-exclude-generated`, which drops the two G103",
+    "(`unsafe` usage) hits in pb/v1/kv.pb.go. That file is produced by",
+    "protoc-gen-go from proto/pallasdb/v1/kv.proto and is never hand-edited; the",
+    "unsafe.Slice/unsafe.StringData calls are protobuf-runtime boilerplate.",
+    "",
+    "To re-audit: `make security` (or `gosec -conf .github/gosec.json ./...`),",
+    "and `gosec ./...` with no config to see the raw, unsuppressed set."
+  ],
+
+  "_exclude_rationale": {
+    "G115": [
+      "\"integer overflow conversion\" — 23 hits, concentrated in db/cell.go,",
+      "db/kv_entry.go, db/sorted_file.go, db/metadata.go and",
+      "cluster/fsm_snapshot.go. These are the binary encode/decode sites: the",
+      "engine's on-disk format is fixed-width little-endian, so every read and",
+      "write legitimately converts between int/uint32/uint64 and back. gosec",
+      "flags the conversion itself, not a reachable overflow; the widths are",
+      "checked by the record-length and CRC validation that surrounds them.",
+      "Suppressed at the rule level because a per-site #nosec would touch ~23",
+      "lines of hot encoding code for no behavioural gain."
+    ],
+    "G304": [
+      "\"potential file inclusion via variable\" — 2 hits (db/os_unix.go:13,",
+      "cmd/pallasdb/local_benchmark.go:672). Opening a caller-supplied path is",
+      "the entire contract of an embedded storage engine: db.NewKV(path) and",
+      "`local benchmark --output` take the path from the operator running the",
+      "process. There is no untrusted-input boundary here to defend."
+    ],
+    "G104": [
+      "\"errors unhandled\" — 2 hits, both db/kv_entry.go:57-58 on",
+      "hash.Hash.Write. The hash.Hash interface documents that Write never",
+      "returns an error, so the call sites are correct. errcheck/errorlint in",
+      "the golangci `lint-strict` job cover genuine unchecked errors far more",
+      "precisely than gosec's G104, which is why the rule as a whole is off",
+      "rather than annotated per site."
+    ]
+  },
+
+  "_rule_config_rationale": {
+    "G301": [
+      "Default is 0750. The threshold is relaxed to 0755 for the data and",
+      "benchmark directories created in db/kv.go and",
+      "cmd/pallasdb/local_benchmark.go, so that an operator can inspect a data",
+      "directory without becoming the service user. Those directories hold no",
+      "secrets; TLS material is supplied by path and is never written by the",
+      "process. The raft directory (cluster/node.go) is deliberately tighter",
+      "at 0750 — it holds the log store and snapshots — and passes under this",
+      "threshold unchanged. If the data and benchmark directories are ever",
+      "tightened too, delete this relaxation rather than keeping it around.",
+      "0755 still fails on 0777."
+    ],
+    "G302": [
+      "Default is 0600. Data files (db/os_unix.go, db/sorted_file.go) and the",
+      "benchmark output file are created 0644 for the same reason. Threshold",
+      "relaxed to 0644 — this still fails on group/other-writable modes."
+    ]
+  },
+
+  "global": {
+    "nosec": "enabled",
+    "audit": "enabled",
+    "exclude": "G115,G304,G104"
+  },
+
+  "G301": "0755",
+  "G302": "0644"
+}
