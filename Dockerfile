@@ -3,7 +3,7 @@
 # ---- build ------------------------------------------------------------------
 # Cross-compilation is done by Go, not by emulation: BUILDPLATFORM keeps the
 # compiler running natively while TARGETOS/TARGETARCH select the output.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 ARG TARGETOS
 ARG TARGETARCH
