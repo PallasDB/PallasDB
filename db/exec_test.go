@@ -44,13 +44,12 @@ func TestSelectTupleLongerThanIndex(t *testing.T) {
 	execSQL(t, db, "insert into t values (9, 9, 9);")
 
 	// (a, b) names more columns than the one column primary key, so there is no
-	// pushdown and the tuple falls through to the filter, which rejects it.
-	// The point of the test is that neither step panics.
-	r, err := db.ExecStmt(parseStmt(t, "select a from t where (a, b) >= (1, 2);"))
-	require.NoError(t, err)
-	defer func() { assert.NoError(t, r.Close()) }()
-	_, err = r.Rows()
-	assert.Error(t, err)
+	// pushdown and the tuple falls through to the filter, which compares it
+	// lexicographically. The original bug was a panic in the pushdown check.
+	assert.Equal(t, []Row{makeRow(1), makeRow(9)},
+		querySQL(t, db, "select a from t where (a, b) >= (1, 2);"))
+	assert.Equal(t, []Row{makeRow(9)},
+		querySQL(t, db, "select a from t where (a, b) > (1, 2);"))
 }
 
 func TestPlanScanUsesIndexRange(t *testing.T) {
@@ -323,6 +322,30 @@ func TestExecStmtInTransaction(t *testing.T) {
 	assert.Empty(t, querySQL(t, db, "select a from t;"))
 }
 
+// A tuple comparison the planner cannot turn into a key range still has to
+// answer: it falls through to the filter and compares lexicographically.
+func TestTupleComparisonFallsBackToFilter(t *testing.T) {
+	db := newTestDB(t)
+	execSQL(t, db, "create table t (a int64, b string, primary key (a));")
+	execSQL(t, db, "insert into t values (1, 'x');")
+	execSQL(t, db, "insert into t values (2, 'a');")
+	execSQL(t, db, "insert into t values (3, 'm');")
+
+	assert.Equal(t, []Row{makeRow(1)}, querySQL(t, db, "select a from t where (a, b) = (1, 'x');"))
+	// Lexicographic: (2,'a') loses to (2,'b') on the second element, so only
+	// the rows after it qualify.
+	assert.Equal(t, []Row{makeRow(3)}, querySQL(t, db, "select a from t where (a, b) > (2, 'b');"))
+	assert.Empty(t, querySQL(t, db, "select a from t where (a, b) = (1, 'zzz');"))
+
+	// Arity and type mismatches are still errors, not silent answers.
+	r, err := db.ExecStmt(parseStmt(t, "select a from t where (a, b) = (1);"))
+	if err == nil {
+		defer func() { assert.NoError(t, r.Close()) }()
+		_, err = r.Rows()
+	}
+	assert.Error(t, err)
+}
+
 // Malformed input must surface as an error, not as a panic from an assertion,
 // because this package runs inside a Raft FSM.
 func TestBadInputDoesNotPanic(t *testing.T) {
@@ -335,7 +358,6 @@ func TestBadInputDoesNotPanic(t *testing.T) {
 		"select a / 0 from t;",
 		"select a + b from t;",
 		"select a from t where a / 0 = 1;",
-		"select a from t where (a, b) = (1, 'x');",
 		"update t set b = a where a = 1;",
 		"update t set a = 2 where a = 1;",
 		"insert into t values (1);",
