@@ -1,0 +1,68 @@
+name: Proto
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # Generated code drift is only detectable if we always run: a change to
+    # pb/ without a matching change to proto/ is exactly what this catches.
+
+permissions:
+  contents: read
+
+env:
+  # Pinned to the versions that produced the checked-in pb/v1/*.pb.go headers.
+  # Bumping either of these is a deliberate change: bump here, run
+  # `make proto`, and commit the regenerated files in the same PR.
+  PROTOC_GEN_GO_VERSION: v1.36.12
+  PROTOC_GEN_GO_GRPC_VERSION: v1.6.2
+
+jobs:
+  buf:
+    name: buf lint / breaking / drift
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `buf breaking` reads the base revision out of the local git
+          # repository, so a shallow clone is not enough.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install buf
+        uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Install protoc plugins
+        run: |
+          go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+          go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
+
+      - name: buf lint
+        run: buf lint
+
+      - name: Make main available locally
+        # On a PR, actions/checkout leaves only refs/remotes/origin/main.
+        # On a push to main this is a no-op (git refuses to fetch into the
+        # currently checked out branch), which is fine: main already exists.
+        run: git fetch --no-tags origin +refs/heads/main:refs/heads/main || true
+
+      - name: buf breaking
+        run: buf breaking --against '.git#branch=main'
+
+      - name: buf generate
+        run: buf generate
+
+      - name: Check generated code is up to date
+        run: |
+          if ! git diff --exit-code -- pb/; then
+            echo "::error::pb/ is out of date with proto/. Run 'make proto' and commit the result."
+            exit 1
+          fi
